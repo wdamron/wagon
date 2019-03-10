@@ -1,12 +1,9 @@
 package compile
 
 import (
-	ops "github.com/go-interpreter/wagon/wasm/operators"
-)
+	"fmt"
 
-var (
-	// AMD64Backend is the native compiler backend for x86-64 architectures.
-	AMD64Backend = &scanner{}
+	ops "github.com/go-interpreter/wagon/wasm/operators"
 )
 
 type scanner struct {
@@ -23,9 +20,11 @@ type InstructionMetadata struct {
 // CompilationCandidate describes a range of bytecode that can
 // be translated to native code.
 type CompilationCandidate struct {
-	Beginning uint
-	End       uint
-	Metrics   *Metrics
+	Beginning        uint
+	End              uint
+	StartInstruction int
+	EndInstruction   int
+	Metrics          *Metrics
 }
 
 // Bounds returns the beginning & end index in the bytecode which
@@ -49,35 +48,43 @@ func (s *scanner) ScanFunc(bytecode []byte, meta []InstructionMetadata) ([]Compi
 	var finishedCandidates []CompilationCandidate
 
 	inProgress := CompilationCandidate{Metrics: &Metrics{}}
+	fmt.Println(s.supportedOpcodes, len(meta))
 
-	for _, inst := range meta {
+	for i, inst := range meta {
 		if !s.supportedOpcodes[inst.Op] {
+			fmt.Printf("not supported: 0x%x\n", inst.Op)
 			// See if the candidate can be emitted.
 			if inProgress.Beginning+1 < inProgress.End && inProgress.Metrics.AllOps > 2 {
 				finishedCandidates = append(finishedCandidates, inProgress)
 			}
 			nextOp := uint(inst.Start + inst.Size)
-			inProgress = CompilationCandidate{Beginning: nextOp, End: nextOp, Metrics: &Metrics{}}
+			inProgress = CompilationCandidate{
+				Beginning:        nextOp,
+				End:              nextOp,
+				StartInstruction: i,
+				EndInstruction:   i,
+				Metrics:          &Metrics{},
+			}
+		} else {
+			// Still a run of supported instructions - increment end
+			// cursor of current candidate.
+			inProgress.End += uint(inst.Size)
+			inProgress.EndInstruction++
 		}
-
-		// Still a run of supported instructions - increment end
-		// cursor of current candidate.
-		inProgress.End += uint(inst.Size)
 
 		// TODO: Add to this table as backends support more opcodes.
 		switch inst.Op {
 		case ops.I64Const:
 			inProgress.Metrics.IntegerOps++
-			inProgress.Metrics.AllOps++
 			inProgress.Metrics.StackWrites++
 		case ops.I64Add, ops.I64Sub:
 			inProgress.Metrics.IntegerOps++
-			inProgress.Metrics.AllOps++
 			inProgress.Metrics.StackReads += 2
 			inProgress.Metrics.StackWrites++
 		}
+		inProgress.Metrics.AllOps++
 	}
-	// var inProgress CompilationCandidate
 
+	//fmt.Printf("Candidates: %v\n", finishedCandidates)
 	return finishedCandidates, nil
 }

@@ -22,7 +22,17 @@ const (
 )
 
 var (
-	supportedNativeArchPlatforms = []compilerVariant{}
+	amd64Backend = &compile.AMD64Backend{}
+
+	supportedNativeArchPlatforms = []compilerVariant{
+		{
+			Arch:          "amd64",
+			OS:            "linux",
+			PageAllocator: &compile.MMapAllocator{},
+			Scanner:       amd64Backend.Scanner(),
+			Builder:       amd64Backend,
+		},
+	}
 )
 
 // compilerVariant parameterizes backends for native compilation.
@@ -51,7 +61,7 @@ type sequenceScanner interface {
 // native instructions.
 type instructionBuilder interface {
 	// Build compiles the specified bytecode into native instructions.
-	Build(lower, upper uint, code []byte) ([]byte, error)
+	Build(lower, upper uint, code []byte, meta []compile.InstructionMetadata) ([]byte, error)
 }
 
 func nativeBackend() (bool, *compilerVariant) {
@@ -91,7 +101,7 @@ func (vm *VM) tryNativeCompile() error {
 				continue
 			}
 
-			asm, err := backend.Builder.Build(lower, upper, fn.code)
+			asm, err := backend.Builder.Build(lower, upper, fn.code, fn.codeMeta)
 			if err != nil {
 				return fmt.Errorf("native compilation failed on vm.funcs[%d].code[%d:%d]: %v", i, lower, upper, err)
 			}
