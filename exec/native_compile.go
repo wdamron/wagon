@@ -23,13 +23,13 @@ const (
 
 var (
 	supportedNativeArchPlatforms = []compilerVariant{
-		// {
-		// 	Arch:          "amd64",
-		// 	OS:            "linux",
-		// 	PageAllocator: nil,
-		// 	Scanner:       nil,
-		// 	Builder:       nil,
-		// },
+		{
+			Arch:          "amd64",
+			OS:            "linux",
+			PageAllocator: &native.MMapAllocator{},
+			Scanner:       nil,
+			Builder:       nil,
+		},
 	}
 )
 
