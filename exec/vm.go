@@ -47,6 +47,7 @@ type context struct {
 	stack   []uint64
 	locals  []uint64
 	code    []byte
+	asm     *[]asmBlock
 	pc      int64
 	curFunc int64
 }
@@ -77,10 +78,21 @@ const wasmPageSize = 65536 // (64 KB)
 
 var endianess = binary.LittleEndian
 
-// NewVM creates a new VM from a given module. If the module defines a
-// start function, it will be executed.
-func NewVM(module *wasm.Module) (*VM, error) {
+// VMOptions describes configuration for a VM.
+type VMOptions struct {
+	// EnableAOT enables ahead-of-time compilation of supported opcodes
+	// into runs of native instructions, if wagon supports native compilation
+	// for the current architecture.
+	EnableAOT bool
+}
+
+// NewVMWithOptions creates a new VM from a given module and options. If the module defines
+// a start function, it will be executed.
+func NewVMWithOptions(module *wasm.Module, options *VMOptions) (*VM, error) {
 	var vm VM
+	if options == nil {
+		options = &VMOptions{}
+	}
 
 	if module.Memory != nil && len(module.Memory.Entries) != 0 {
 		if len(module.Memory.Entries) > 1 {
@@ -150,6 +162,12 @@ func NewVM(module *wasm.Module) (*VM, error) {
 		}
 	}
 
+	if options.EnableAOT {
+		if err := vm.tryNativeCompile(); err != nil {
+			return nil, err
+		}
+	}
+
 	if module.Start != nil {
 		_, err := vm.ExecCode(int64(module.Start.Index))
 		if err != nil {
@@ -158,6 +176,12 @@ func NewVM(module *wasm.Module) (*VM, error) {
 	}
 
 	return &vm, nil
+}
+
+// NewVM creates a new VM from a given module. If the module defines a
+// start function, it will be executed.
+func NewVM(module *wasm.Module) (*VM, error) {
+	return NewVMWithOptions(module, nil)
 }
 
 // Memory returns the linear memory space for the VM.
@@ -390,6 +414,10 @@ outer:
 			place := vm.fetchInt64()
 			vm.ctx.stack = vm.ctx.stack[:len(vm.ctx.stack)-int(place)]
 			vm.pushUint64(top)
+
+		case ops.WagonNativeExec:
+			i := vm.fetchUint32()
+			vm.nativeCodeInvocation(i)
 		default:
 			vm.funcTable[op]()
 		}

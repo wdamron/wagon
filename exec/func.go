@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"unsafe"
 
 	"github.com/go-interpreter/wagon/exec/internal/compile"
 )
@@ -23,6 +24,15 @@ type compiledFunction struct {
 	totalLocalVars int  // number of local variables used by the function
 	args           int  // number of arguments the function accepts
 	returns        bool // whether the function returns a value
+
+	asm []asmBlock
+}
+
+type asmBlock struct {
+	// address into executable memory where native assembly is located.
+	addr unsafe.Pointer
+	// how many bytes of the wasm instruction stream this asmBlock addresses.
+	stride uint
 }
 
 type goFunction struct {
@@ -94,6 +104,7 @@ func (compiled compiledFunction) call(vm *VM, index int64) {
 		stack:   newStack,
 		locals:  locals,
 		code:    compiled.code,
+		asm:     &compiled.asm,
 		pc:      0,
 		curFunc: index,
 	}
