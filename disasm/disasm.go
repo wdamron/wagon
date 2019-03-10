@@ -39,6 +39,8 @@ type Instr struct {
 	// If the operator is br_table (ops.BrTable), this is a list of StackInfo
 	// fields for each of the blocks/branches referenced by the operator.
 	Branches []StackInfo
+	// EncodedLen is the length of the encoded Instr in bytes.
+	EncodedLen int
 }
 
 // StackInfo stores details about a new stack created or unwinded by an instruction.
@@ -373,7 +375,9 @@ func NewDisassembly(fn wasm.Function, module *wasm.Module) (*Disassembly, error)
 func Disassemble(code []byte) ([]Instr, error) {
 	reader := bytes.NewReader(code)
 	var out []Instr
+	var cursor uint
 	for {
+		startingCursor := cursor
 		op, err := reader.ReadByte()
 		if err == io.EOF {
 			break
@@ -388,70 +392,81 @@ func Disassemble(code []byte) ([]Instr, error) {
 		instr := Instr{
 			Op: opStr,
 		}
+		cursor++
 
 		switch op {
 		case ops.Block, ops.Loop, ops.If:
-			sig, err := leb128.ReadVarint32(reader)
+			sig, size, err := leb128.ReadVarint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, wasm.BlockType(sig))
+			cursor += size
 		case ops.Br, ops.BrIf:
-			depth, err := leb128.ReadVarUint32(reader)
+			depth, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, depth)
+			cursor += size
 		case ops.BrTable:
-			targetCount, err := leb128.ReadVarUint32(reader)
+			targetCount, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, targetCount)
+			cursor += size
 			for i := uint32(0); i < targetCount; i++ {
-				entry, err := leb128.ReadVarUint32(reader)
+				entry, size, err := leb128.ReadVarUint32Size(reader)
 				if err != nil {
 					return nil, err
 				}
 				instr.Immediates = append(instr.Immediates, entry)
+				cursor += size
 			}
 
-			defaultTarget, err := leb128.ReadVarUint32(reader)
+			defaultTarget, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, defaultTarget)
+			cursor += size
 		case ops.Call, ops.CallIndirect:
-			index, err := leb128.ReadVarUint32(reader)
+			index, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, index)
+			cursor += size
 			if op == ops.CallIndirect {
-				reserved, err := leb128.ReadVarUint32(reader)
+				reserved, size, err := leb128.ReadVarUint32Size(reader)
 				if err != nil {
 					return nil, err
 				}
 				instr.Immediates = append(instr.Immediates, reserved)
+				cursor += size
 			}
 		case ops.GetLocal, ops.SetLocal, ops.TeeLocal, ops.GetGlobal, ops.SetGlobal:
-			index, err := leb128.ReadVarUint32(reader)
+			index, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, index)
+			cursor += size
 		case ops.I32Const:
-			i, err := leb128.ReadVarint32(reader)
+			i, size, err := leb128.ReadVarint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, i)
+			cursor += size
 		case ops.I64Const:
-			i, err := leb128.ReadVarint64(reader)
+			i, size, err := leb128.ReadVarint64Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, i)
+			cursor += size
 		case ops.F32Const:
 			var b [4]byte
 			if _, err := io.ReadFull(reader, b[:]); err != nil {
@@ -459,6 +474,7 @@ func Disassemble(code []byte) ([]Instr, error) {
 			}
 			i := binary.LittleEndian.Uint32(b[:])
 			instr.Immediates = append(instr.Immediates, math.Float32frombits(i))
+			cursor += 4
 		case ops.F64Const:
 			var b [8]byte
 			if _, err := io.ReadFull(reader, b[:]); err != nil {
@@ -466,26 +482,32 @@ func Disassemble(code []byte) ([]Instr, error) {
 			}
 			i := binary.LittleEndian.Uint64(b[:])
 			instr.Immediates = append(instr.Immediates, math.Float64frombits(i))
+			cursor += 8
 		case ops.I32Load, ops.I64Load, ops.F32Load, ops.F64Load, ops.I32Load8s, ops.I32Load8u, ops.I32Load16s, ops.I32Load16u, ops.I64Load8s, ops.I64Load8u, ops.I64Load16s, ops.I64Load16u, ops.I64Load32s, ops.I64Load32u, ops.I32Store, ops.I64Store, ops.F32Store, ops.F64Store, ops.I32Store8, ops.I32Store16, ops.I64Store8, ops.I64Store16, ops.I64Store32:
 			// read memory_immediate
-			flags, err := leb128.ReadVarUint32(reader)
+			flags, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, flags)
+			cursor += size
 
-			offset, err := leb128.ReadVarUint32(reader)
+			offset, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, offset)
+			cursor += size
 		case ops.CurrentMemory, ops.GrowMemory:
-			res, err := leb128.ReadVarUint32(reader)
+			res, size, err := leb128.ReadVarUint32Size(reader)
 			if err != nil {
 				return nil, err
 			}
 			instr.Immediates = append(instr.Immediates, uint8(res))
+			cursor += size
 		}
+
+		instr.EncodedLen = int(cursor - startingCursor)
 		out = append(out, instr)
 	}
 	return out, nil

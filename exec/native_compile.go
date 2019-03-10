@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/go-interpreter/wagon/exec/internal/compile/native"
+	"github.com/go-interpreter/wagon/exec/internal/compile"
 	ops "github.com/go-interpreter/wagon/wasm/operators"
 )
 
@@ -22,7 +22,19 @@ const (
 )
 
 var (
+<<<<<<< HEAD
 	supportedNativeArchPlatforms = []compilerVariant{}
+=======
+	supportedNativeArchPlatforms = []compilerVariant{
+		{
+			Arch:          "amd64",
+			OS:            "linux",
+			PageAllocator: &compile.MMapAllocator{},
+			Scanner:       compile.AMD64Backend,
+			Builder:       nil,
+		},
+	}
+>>>>>>> native2
 )
 
 // compilerVariant parameterizes backends for native compilation.
@@ -44,17 +56,7 @@ type pageAllocator interface {
 type sequenceScanner interface {
 	// ScanFunc returns an ordered, non-overlapping set of
 	// sequences to compile into native code.
-	ScanFunc(fn *compiledFunction) ([]candidateSequence, error)
-}
-
-// candidateSequence represents a series of instructions which are candidates
-// for conversion into native code.
-type candidateSequence interface {
-	// Start & End bounds of the sequence in the wasm instruction slice.
-	Bounds() (uint, uint)
-	// Metrics returns heuristic information about instructions in the
-	// sequence.
-	Metrics() *native.Metrics
+	ScanFunc(bytecode []byte, meta []compile.InstructionMetadata) ([]compile.CompilationCandidate, error)
 }
 
 // instructionBuilder is responsible for compiling wasm opcodes into
@@ -86,15 +88,14 @@ func (vm *VM) tryNativeCompile() error {
 			continue
 		}
 
-		fn := vm.funcs[i].(*compiledFunction)
-		candidates, err := backend.Scanner.ScanFunc(fn)
+		fn := vm.funcs[i].(compiledFunction)
+		candidates, err := backend.Scanner.ScanFunc(fn.code, fn.codeMeta)
 		if err != nil {
 			return fmt.Errorf("AOT scan failed on vm.funcs[%d]: %v", i, err)
 		}
 
 		for _, candidate := range candidates {
-			m := candidate.Metrics()
-			if (m.IntegerOps + m.FloatOps) < minArithInstructionSequence {
+			if (candidate.Metrics.IntegerOps + candidate.Metrics.FloatOps) < minArithInstructionSequence {
 				continue
 			}
 			lower, upper := candidate.Bounds()
@@ -130,6 +131,7 @@ func (vm *VM) tryNativeCompile() error {
 				fn.code[i] = ops.Unreachable
 			}
 		}
+		vm.funcs[i] = fn
 	}
 
 	return nil

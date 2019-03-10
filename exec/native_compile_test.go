@@ -7,7 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/go-interpreter/wagon/disasm"
-	"github.com/go-interpreter/wagon/exec/internal/compile/native"
+	"github.com/go-interpreter/wagon/exec/internal/compile"
 	ops "github.com/go-interpreter/wagon/wasm/operators"
 )
 
@@ -31,25 +31,11 @@ func setupNativeAsmBackendMocks(t *testing.T) (*mockSequenceScanner, *mockPageAl
 	return s, p, b
 }
 
-type mockCandidateSequence struct {
-	beginning uint
-	end       uint
-	m         *native.Metrics
-}
-
-func (s *mockCandidateSequence) Bounds() (uint, uint) {
-	return s.beginning, s.end
-}
-
-func (s *mockCandidateSequence) Metrics() *native.Metrics {
-	return s.m
-}
-
 type mockSequenceScanner struct {
-	emit []candidateSequence
+	emit []compile.CompilationCandidate
 }
 
-func (s *mockSequenceScanner) ScanFunc(fn *compiledFunction) ([]candidateSequence, error) {
+func (s *mockSequenceScanner) ScanFunc(bc []byte, meta []compile.InstructionMetadata) ([]compile.CompilationCandidate, error) {
 	return s.emit, nil
 }
 
@@ -94,7 +80,7 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 
 	vm := &VM{
 		funcs: []function{
-			&compiledFunction{
+			compiledFunction{
 				code: wasm,
 			},
 		},
@@ -102,11 +88,11 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 	vm.newFuncTable()
 
 	// setup mocks.
-	scanner.emit = []candidateSequence{
+	scanner.emit = []compile.CompilationCandidate{
 		// Sequence with single integer op - should not compiled.
-		&mockCandidateSequence{beginning: 0, end: 7, m: &native.Metrics{IntegerOps: 1}},
+		compile.CompilationCandidate{Beginning: 0, End: 7, Metrics: &compile.Metrics{IntegerOps: 1}},
 		// Sequence with two integer ops - should be emitted.
-		&mockCandidateSequence{beginning: 7, end: 15, m: &native.Metrics{IntegerOps: 2}},
+		compile.CompilationCandidate{Beginning: 7, End: 15, Metrics: &compile.Metrics{IntegerOps: 2}},
 	}
 
 	if err := vm.tryNativeCompile(); err != nil {
@@ -115,9 +101,9 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 
 	// Our scanner emitted two sequences. The first should not have resulted in
 	// compilation, but the second should have. Lets check thats the case.
-	fn := vm.funcs[0].(*compiledFunction)
+	fn := vm.funcs[0].(compiledFunction)
 	if want := 1; len(fn.asm) != want {
-		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(*compiledFunction).asm), want)
+		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(compiledFunction).asm), want)
 	}
 	if want := 8; int(fn.asm[0].stride) != want {
 		t.Errorf("fn.asm[0].stride = %v, want %v", fn.asm[0].stride, want)

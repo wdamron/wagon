@@ -19,6 +19,7 @@ type function interface {
 
 type compiledFunction struct {
 	code           []byte
+	codeMeta       []compile.InstructionMetadata
 	branchTables   []*compile.BranchTable
 	maxDepth       int  // maximum stack depth reached while executing the function body
 	totalLocalVars int  // number of local variables used by the function

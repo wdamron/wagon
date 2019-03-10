@@ -134,8 +134,9 @@ func NewVMWithOptions(module *wasm.Module, options *VMOptions) (*VM, error) {
 		for _, entry := range fn.Body.Locals {
 			totalLocalVars += int(entry.Count)
 		}
-		code, table := compile.Compile(disassembly.Code)
+		code, table, meta := compile.Compile(disassembly.Code)
 		vm.funcs[i] = compiledFunction{
+			codeMeta:       meta,
 			code:           code,
 			branchTables:   table,
 			maxDepth:       disassembly.MaxDepth,
