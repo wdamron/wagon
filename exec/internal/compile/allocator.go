@@ -1,4 +1,4 @@
-package native
+package compile
 
 import (
 	"unsafe"
