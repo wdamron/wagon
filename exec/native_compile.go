@@ -22,15 +22,7 @@ const (
 )
 
 var (
-	supportedNativeArchPlatforms = []compilerVariant{
-		// {
-		// 	Arch:          "amd64",
-		// 	OS:            "linux",
-		// 	PageAllocator: nil,
-		// 	Scanner:       nil,
-		// 	Builder:       nil,
-		// },
-	}
+	supportedNativeArchPlatforms = []compilerVariant{}
 )
 
 // compilerVariant parameterizes backends for native compilation.
