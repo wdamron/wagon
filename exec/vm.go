@@ -134,11 +134,11 @@ func NewVMWithOptions(module *wasm.Module, options *VMOptions) (*VM, error) {
 		for _, entry := range fn.Body.Locals {
 			totalLocalVars += int(entry.Count)
 		}
-		code, table, meta := compile.Compile(disassembly.Code)
+		code, meta := compile.Compile(disassembly.Code)
 		vm.funcs[i] = compiledFunction{
 			codeMeta:       meta,
 			code:           code,
-			branchTables:   table,
+			branchTables:   meta.BranchTables,
 			maxDepth:       disassembly.MaxDepth,
 			totalLocalVars: totalLocalVars,
 			args:           len(fn.Sig.ParamTypes),
@@ -320,6 +320,7 @@ func (vm *VM) ExecCode(fnIndex int64, args ...uint64) (rtrn interface{}, err err
 	vm.ctx.locals = make([]uint64, compiled.totalLocalVars)
 	vm.ctx.pc = 0
 	vm.ctx.code = compiled.code
+	vm.ctx.asm = &compiled.asm
 	vm.ctx.curFunc = fnIndex
 
 	for i, arg := range args {
@@ -351,6 +352,7 @@ outer:
 	for int(vm.ctx.pc) < len(vm.ctx.code) && !vm.abort {
 		op := vm.ctx.code[vm.ctx.pc]
 		vm.ctx.pc++
+		//fmt.Printf("op=%x, pc=%v, *asm=%v\n", op, vm.ctx.pc, *vm.ctx.asm)
 		switch op {
 		case ops.Return:
 			break outer

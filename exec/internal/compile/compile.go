@@ -131,13 +131,25 @@ type block struct {
 	branchTables []*BranchTable   // All branch tables that were defined in this block.
 }
 
+// BytecodeMetadata encapsulates metadata about a bytecode stream.
+type BytecodeMetadata struct {
+	BranchTables []*BranchTable
+	Instructions []InstructionMetadata
+
+	// Inbound jumps - used by the AOT/JIT scanner to
+	// avoid generating native code which has an inbound
+	// jump target somewhere deep inside.
+	InboundTargets map[int64]bool
+}
+
 // Compile rewrites WebAssembly bytecode from its disassembly.
 // TODO(vibhavp): Add options for optimizing code. Operators like i32.reinterpret/f32
 // are no-ops, and can be safely removed.
-func Compile(disassembly []disasm.Instr) ([]byte, []*BranchTable, []InstructionMetadata) {
+func Compile(disassembly []disasm.Instr) ([]byte, *BytecodeMetadata) {
 	buffer := new(bytes.Buffer)
 	metadata := make([]InstructionMetadata, 0, len(disassembly))
 	branchTables := []*BranchTable{}
+	inboundTargets := make(map[int64]bool)
 
 	curBlockDepth := -1
 	blocks := make(map[int]*block) // maps nesting depths (labels) to blocks
@@ -213,7 +225,7 @@ func Compile(disassembly []disasm.Instr) ([]byte, []*BranchTable, []InstructionM
 			ifBlock := blocks[curBlockDepth]
 			code := buffer.Bytes()
 
-			buffer = patchOffset(code, ifBlock.elseAddrOffset, curOffset)
+			buffer = patchOffset(code, ifBlock.elseAddrOffset, curOffset, inboundTargets)
 			// this is no longer an if block
 			ifBlock.ifBlock = false
 			ifBlock.patchOffsets = append(ifBlock.patchOffsets, ifBlockEndOffset)
@@ -241,13 +253,13 @@ func Compile(disassembly []disasm.Instr) ([]byte, []*BranchTable, []InstructionM
 				block.offset = int64(buffer.Len())
 				if block.ifBlock {
 					code := buffer.Bytes()
-					buffer = patchOffset(code, block.elseAddrOffset, int64(block.offset))
+					buffer = patchOffset(code, block.elseAddrOffset, int64(block.offset), inboundTargets)
 				}
 			}
 
 			for _, offset := range block.patchOffsets {
 				code := buffer.Bytes()
-				buffer = patchOffset(code, offset, block.offset)
+				buffer = patchOffset(code, offset, block.offset, inboundTargets)
 			}
 
 			for _, table := range block.branchTables {
@@ -348,17 +360,22 @@ func Compile(disassembly []disasm.Instr) ([]byte, []*BranchTable, []InstructionM
 	// patch all references to the "root" block of the function body
 	for _, offset := range blocks[-1].patchOffsets {
 		code := buffer.Bytes()
-		buffer = patchOffset(code, offset, int64(addr))
+		buffer = patchOffset(code, offset, int64(addr), inboundTargets)
 	}
 
 	for _, table := range branchTables {
 		table.patchedAddrs = nil
 	}
-	return buffer.Bytes(), branchTables, metadata
+	return buffer.Bytes(), &BytecodeMetadata{
+		BranchTables:   branchTables,
+		Instructions:   metadata,
+		InboundTargets: inboundTargets,
+	}
 }
 
 // replace the address starting at start with addr
-func patchOffset(code []byte, start int64, addr int64) *bytes.Buffer {
+func patchOffset(code []byte, start int64, addr int64, inboundTargets map[int64]bool) *bytes.Buffer {
+	inboundTargets[addr] = true
 	var shift uint
 	for i := int64(0); i < 8; i++ {
 		code[start+i] = byte(addr >> shift)

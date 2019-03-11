@@ -1,8 +1,6 @@
 package compile
 
 import (
-	"fmt"
-
 	ops "github.com/go-interpreter/wagon/wasm/operators"
 )
 
@@ -20,11 +18,16 @@ type InstructionMetadata struct {
 // CompilationCandidate describes a range of bytecode that can
 // be translated to native code.
 type CompilationCandidate struct {
-	Beginning        uint
-	End              uint
+	// Bytecode index of the first opcode.
+	Beginning uint
+	// Bytecode index of the last byte in the instruction.
+	End uint
+	// InstructionMeta index of the first instruction.
 	StartInstruction int
-	EndInstruction   int
-	Metrics          *Metrics
+	// InstructionMeta index of the last instruction.
+	EndInstruction int
+	// Metrics about the instructions between first & last index.
+	Metrics *Metrics
 }
 
 // Bounds returns the beginning & end index in the bytecode which
@@ -43,18 +46,23 @@ type Metrics struct {
 	FloatOps   int
 }
 
-// ScanFunc implements exec.sequenceScanner.
-func (s *scanner) ScanFunc(bytecode []byte, meta []InstructionMetadata) ([]CompilationCandidate, error) {
+// ScanFunc scans the given function information, emitting selections of
+// bytecode which could be compiled into function code.
+func (s *scanner) ScanFunc(bytecode []byte, meta *BytecodeMetadata) ([]CompilationCandidate, error) {
 	var finishedCandidates []CompilationCandidate
 
-	inProgress := CompilationCandidate{Metrics: &Metrics{}}
-	fmt.Println(s.supportedOpcodes, len(meta))
+	inProgress := CompilationCandidate{End: 1, Metrics: &Metrics{}}
 
-	for i, inst := range meta {
-		if !s.supportedOpcodes[inst.Op] {
-			fmt.Printf("not supported: 0x%x\n", inst.Op)
+	for i, inst := range meta.Instructions {
+		// Except for the first instruction, we cant emit a native section
+		// where other parts of code try and call into us halfway. Maybe we
+		// can support that in the future.
+		isInsideBranchTarget := meta.InboundTargets[int64(inst.Start)] && inst.Start > 0
+
+		if !s.supportedOpcodes[inst.Op] || isInsideBranchTarget {
+			//fmt.Printf("not supported: 0x%x\n", inst.Op)
 			// See if the candidate can be emitted.
-			if inProgress.Beginning+1 < inProgress.End && inProgress.Metrics.AllOps > 2 {
+			if inProgress.Metrics.AllOps > 2 {
 				finishedCandidates = append(finishedCandidates, inProgress)
 			}
 			nextOp := uint(inst.Start + inst.Size)
@@ -68,7 +76,7 @@ func (s *scanner) ScanFunc(bytecode []byte, meta []InstructionMetadata) ([]Compi
 		} else {
 			// Still a run of supported instructions - increment end
 			// cursor of current candidate.
-			inProgress.End += uint(inst.Size)
+			inProgress.End = uint(inst.Start) + uint(inst.Size)
 			inProgress.EndInstruction++
 		}
 
@@ -85,6 +93,12 @@ func (s *scanner) ScanFunc(bytecode []byte, meta []InstructionMetadata) ([]Compi
 		inProgress.Metrics.AllOps++
 	}
 
-	//fmt.Printf("Candidates: %v\n", finishedCandidates)
+	if inProgress.Metrics.AllOps > 2 {
+		inProgress.End++
+		finishedCandidates = append(finishedCandidates, inProgress)
+	}
+
+	//fmt.Printf("Candidates: %+v\n", finishedCandidates)
+	//fmt.Printf("Instructions: %+v\n", meta.Instructions)
 	return finishedCandidates, nil
 }

@@ -1,6 +1,7 @@
 package compile
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	ops "github.com/go-interpreter/wagon/wasm/operators"
@@ -42,23 +43,48 @@ func (b *AMD64Backend) Scanner() *scanner {
 }
 
 // Build implements exec.instructionBuilder.
-func (b *AMD64Backend) Build(lower, upper uint, code []byte, meta []InstructionMetadata) ([]byte, error) {
+func (b *AMD64Backend) Build(candidate CompilationCandidate, code []byte, meta *BytecodeMetadata) ([]byte, error) {
 	builder, err := asm.NewBuilder("amd64", 64)
 	if err != nil {
 		return nil, err
 	}
 	b.emitPreamble(builder)
 
-	for i := lower; i < upper; i++ {
-		switch meta[i].Op {
+	for i := candidate.StartInstruction; i < candidate.EndInstruction; i++ {
+		//fmt.Printf("i=%d, meta=%+v, len=%d\n", i, meta[i], len(code))
+		inst := meta.Instructions[i]
+		switch inst.Op {
 		case ops.I64Const:
-			b.emitPushI64(builder, binary.LittleEndian.Uint64(code[meta[i].Start+1:]))
+			immediate, err := b.readIntImmediate(code, inst)
+			if err != nil {
+				return nil, err
+			}
+			b.emitPushI64(builder, immediate)
 		case ops.I64Add, ops.I64Sub:
-			b.emitBinaryI64(builder, meta[i].Op)
+			b.emitBinaryI64(builder, inst.Op)
 		}
 	}
+	ret := builder.NewProg()
+	ret.As = obj.ARET
+	builder.AddInstruction(ret)
 
-	return builder.Assemble(), nil
+	out := builder.Assemble()
+	// cmd := exec.Command("ndisasm", "-b64", "-")
+	// cmd.Stdin = bytes.NewReader(out)
+	// cmd.Stdout = os.Stdout
+	// cmd.Run()
+	return out, nil
+}
+
+func (b *AMD64Backend) readIntImmediate(code []byte, meta InstructionMetadata) (uint64, error) {
+	if meta.Size == 5 {
+		var out uint32
+		err := binary.Read(bytes.NewReader(code[meta.Start+1:meta.Start+meta.Size]), binary.LittleEndian, &out)
+		return uint64(out), err
+	}
+	var out uint64
+	err := binary.Read(bytes.NewReader(code[meta.Start+1:meta.Start+meta.Size]), binary.LittleEndian, &out)
+	return out, err
 }
 
 func (b *AMD64Backend) emitWasmStackLoad(builder *asm.Builder, reg int16) {
@@ -122,11 +148,12 @@ func (b *AMD64Backend) emitWasmStackLoad(builder *asm.Builder, reg int16) {
 
 func (b *AMD64Backend) emitWasmStackPush(builder *asm.Builder, reg int16) {
 	// movq r13,     [r10+8]
-	// incq r13
-	// movq [r10+8], r13
 	// movq r12,     [r10]
 	// leaq r12,     [r12 + r13*8]
 	// movq [r12],   reg
+	// incq r13
+	// movq [r10+8], r13
+
 	prog := builder.NewProg()
 	prog.As = x86.AMOVQ
 	prog.To.Type = obj.TYPE_REG
@@ -134,21 +161,6 @@ func (b *AMD64Backend) emitWasmStackPush(builder *asm.Builder, reg int16) {
 	prog.From.Type = obj.TYPE_MEM
 	prog.From.Reg = x86.REG_R10
 	prog.From.Offset = 8
-	builder.AddInstruction(prog)
-
-	prog = builder.NewProg()
-	prog.As = x86.AINCQ
-	prog.To.Type = obj.TYPE_REG
-	prog.To.Reg = x86.REG_R13
-	builder.AddInstruction(prog)
-
-	prog = builder.NewProg()
-	prog.As = x86.AMOVQ
-	prog.From.Type = obj.TYPE_REG
-	prog.From.Reg = x86.REG_R13
-	prog.To.Type = obj.TYPE_MEM
-	prog.To.Reg = x86.REG_R10
-	prog.To.Offset = 8
 	builder.AddInstruction(prog)
 
 	prog = builder.NewProg()
@@ -176,11 +188,26 @@ func (b *AMD64Backend) emitWasmStackPush(builder *asm.Builder, reg int16) {
 	prog.From.Type = obj.TYPE_REG
 	prog.From.Reg = reg
 	builder.AddInstruction(prog)
+
+	prog = builder.NewProg()
+	prog.As = x86.AINCQ
+	prog.To.Type = obj.TYPE_REG
+	prog.To.Reg = x86.REG_R13
+	builder.AddInstruction(prog)
+
+	prog = builder.NewProg()
+	prog.As = x86.AMOVQ
+	prog.From.Type = obj.TYPE_REG
+	prog.From.Reg = x86.REG_R13
+	prog.To.Type = obj.TYPE_MEM
+	prog.To.Reg = x86.REG_R10
+	prog.To.Offset = 8
+	builder.AddInstruction(prog)
 }
 
 func (b *AMD64Backend) emitBinaryI64(builder *asm.Builder, op byte) {
-	b.emitWasmStackLoad(builder, x86.REG_AX)
 	b.emitWasmStackLoad(builder, x86.REG_R9)
+	b.emitWasmStackLoad(builder, x86.REG_AX)
 
 	prog := builder.NewProg()
 	prog.From.Type = obj.TYPE_REG

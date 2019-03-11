@@ -15,7 +15,7 @@ import (
 const (
 	// NOTE: must never be less than 5, as room is needed to pack the
 	// wagon.nativeExec instruction and its parameter.
-	minInstructionSequence      = 5
+	minInstBytes                = 5
 	minArithInstructionSequence = 2
 
 	nativeExecPrologueSize = 5
@@ -54,14 +54,14 @@ type pageAllocator interface {
 type sequenceScanner interface {
 	// ScanFunc returns an ordered, non-overlapping set of
 	// sequences to compile into native code.
-	ScanFunc(bytecode []byte, meta []compile.InstructionMetadata) ([]compile.CompilationCandidate, error)
+	ScanFunc(bytecode []byte, meta *compile.BytecodeMetadata) ([]compile.CompilationCandidate, error)
 }
 
 // instructionBuilder is responsible for compiling wasm opcodes into
 // native instructions.
 type instructionBuilder interface {
 	// Build compiles the specified bytecode into native instructions.
-	Build(lower, upper uint, code []byte, meta []compile.InstructionMetadata) ([]byte, error)
+	Build(candidate compile.CompilationCandidate, code []byte, meta *compile.BytecodeMetadata) ([]byte, error)
 }
 
 func nativeBackend() (bool, *compilerVariant) {
@@ -79,8 +79,6 @@ func (vm *VM) tryNativeCompile() error {
 		return nil
 	}
 
-	// TODO(twitchyliquid64): Parallelize scanning + compilation at the function
-	// level for some speed gains.
 	for i := range vm.funcs {
 		if _, isGoFunc := vm.funcs[i].(*goFunction); isGoFunc {
 			continue
@@ -97,11 +95,11 @@ func (vm *VM) tryNativeCompile() error {
 				continue
 			}
 			lower, upper := candidate.Bounds()
-			if (upper - lower) < minInstructionSequence {
+			if (upper - lower) < minInstBytes {
 				continue
 			}
 
-			asm, err := backend.Builder.Build(lower, upper, fn.code, fn.codeMeta)
+			asm, err := backend.Builder.Build(candidate, fn.code, fn.codeMeta)
 			if err != nil {
 				return fmt.Errorf("native compilation failed on vm.funcs[%d].code[%d:%d]: %v", i, lower, upper, err)
 			}
@@ -125,7 +123,7 @@ func (vm *VM) tryNativeCompile() error {
 			// a jump to the middle of re-compiled code.
 			// This conservative behaviour is the least likely to result in
 			// bugs becoming security issues.
-			for i := lower + 5; i < upper; i++ {
+			for i := lower + 5; i < upper-1; i++ {
 				fn.code[i] = ops.Unreachable
 			}
 		}
@@ -142,7 +140,8 @@ func (vm *VM) tryNativeCompile() error {
 // [fp+pointerSize:fp+pointerSize*2]: sliceHeader for locals variables.
 func (vm *VM) nativeCodeInvocation(asmIndex uint32) {
 	block := (*vm.ctx.asm)[asmIndex]
-	fp := *(*func(unsafe.Pointer, unsafe.Pointer))(block.addr)
+	f := (uintptr)(unsafe.Pointer(&block.addr))
+	fp := **(**func(unsafe.Pointer, unsafe.Pointer))(unsafe.Pointer(&f))
 	fp(unsafe.Pointer(&vm.ctx.stack), unsafe.Pointer(&vm.ctx.locals))
-	vm.ctx.pc += int64(block.stride - nativeExecPrologueSize)
+	vm.ctx.pc += int64(block.stride - minInstBytes - 1)
 }

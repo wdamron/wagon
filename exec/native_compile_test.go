@@ -35,7 +35,7 @@ type mockSequenceScanner struct {
 	emit []compile.CompilationCandidate
 }
 
-func (s *mockSequenceScanner) ScanFunc(bc []byte, meta []compile.InstructionMetadata) ([]compile.CompilationCandidate, error) {
+func (s *mockSequenceScanner) ScanFunc(bc []byte, meta *compile.BytecodeMetadata) ([]compile.CompilationCandidate, error) {
 	return s.emit, nil
 }
 
@@ -47,8 +47,8 @@ func (a *mockPageAllocator) AllocateExec(asm []byte) (unsafe.Pointer, error) {
 
 type mockInstructionBuilder struct{}
 
-func (b *mockInstructionBuilder) Build(lower, upper uint, code []byte, meta []compile.InstructionMetadata) ([]byte, error) {
-	return []byte{byte(lower), byte(upper)}, nil
+func (b *mockInstructionBuilder) Build(candidate compile.CompilationCandidate, code []byte, meta *compile.BytecodeMetadata) ([]byte, error) {
+	return []byte{byte(candidate.Beginning), byte(candidate.End)}, nil
 }
 
 func TestNativeAsmStructureSetup(t *testing.T) {
@@ -118,7 +118,7 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 	if want := []byte{0, 0, 0, 0}; !bytes.Equal(fn.code[8:12], want) {
 		t.Errorf("fn.code[8:12] = %v, want %v", fn.code[8:12], want)
 	}
-	for i := 13; i < len(fn.code); i++ {
+	for i := 13; i < len(fn.code)-2; i++ {
 		if fn.code[i] != ops.Unreachable {
 			t.Errorf("fn.code[%d] = %v, want ops.Unreachable", i, fn.code[i])
 		}
@@ -130,25 +130,25 @@ func TestBasicAMD64(t *testing.T) {
 		t.SkipNow()
 	}
 
-	constInst, _ := ops.New(ops.I32Const)
-	addInst, _ := ops.New(ops.I32Add)
+	constInst, _ := ops.New(ops.I64Const)
+	addInst, _ := ops.New(ops.I64Add)
+	cantOp, _ := ops.New(ops.I32Add)
 
-	wasm, err := disasm.Assemble([]disasm.Instr{
+	code, meta := compile.Compile([]disasm.Instr{
 		{Op: constInst, Immediates: []interface{}{int32(100)}},
-		{Op: constInst, Immediates: []interface{}{int32(200)}},
-		{Op: constInst, Immediates: []interface{}{int32(300)}},
 		{Op: constInst, Immediates: []interface{}{int32(16)}},
 		{Op: constInst, Immediates: []interface{}{int32(4)}},
 		{Op: addInst},
+		{Op: cantOp},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	vm := &VM{
 		funcs: []function{
 			compiledFunction{
-				code: wasm,
+				returns:      true,
+				maxDepth:     5,
+				code:         code,
+				branchTables: meta.BranchTables,
+				codeMeta:     meta,
 			},
 		},
 	}
@@ -158,28 +158,31 @@ func TestBasicAMD64(t *testing.T) {
 		t.Fatalf("tryNativeCompile() failed: %v", err)
 	}
 
-	// Our scanner emitted two sequences. The first should not have resulted in
-	// compilation, but the second should have. Lets check thats the case.
 	fn := vm.funcs[0].(compiledFunction)
 	if want := 1; len(fn.asm) != want {
 		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(compiledFunction).asm), want)
 	}
-	if want := 8; int(fn.asm[0].stride) != want {
+	if want := 16; int(fn.asm[0].stride) != want {
 		t.Errorf("fn.asm[0].stride = %v, want %v", fn.asm[0].stride, want)
 	}
 
 	// The function bytecode should have been modified to call wagon.nativeExec,
 	// with the index of the block (0) following, and remaining bytes set to the
 	// unreachable opcode.
-	if want := ops.WagonNativeExec; fn.code[7] != want {
-		t.Errorf("fn.code[7] = %v, want %v", fn.code[7], want)
+	if want := ops.WagonNativeExec; fn.code[0] != want {
+		t.Errorf("fn.code[0] = %v, want %v", fn.code[0], want)
 	}
-	if want := []byte{0, 0, 0, 0}; !bytes.Equal(fn.code[8:12], want) {
-		t.Errorf("fn.code[8:12] = %v, want %v", fn.code[8:12], want)
+	if want := []byte{0, 0, 0, 0}; !bytes.Equal(fn.code[1:5], want) {
+		t.Errorf("fn.code[1:5] = %v, want %v", fn.code[1:5], want)
 	}
-	for i := 13; i < len(fn.code); i++ {
+	for i := 6; i < 15; i++ {
 		if fn.code[i] != ops.Unreachable {
 			t.Errorf("fn.code[%d] = %v, want ops.Unreachable", i, fn.code[i])
 		}
+	}
+
+	fn.call(vm, 0)
+	if len(vm.ctx.stack) != 1 || vm.ctx.stack[0] != 120 {
+		t.Errorf("stack = %+v, want [120]", vm.ctx.stack)
 	}
 }
