@@ -259,7 +259,6 @@ func runTest(fileName string, testCases []testCase, t testing.TB, nativeBackend 
 		t.Fatal(err)
 	}
 	defer file.Close()
-	fmt.Println(fileName)
 
 	module, err := wasm.ReadModule(file, nil)
 	if err != nil {
@@ -367,7 +366,7 @@ func testModules(t *testing.T, dir string) {
 			runTest(path, testCases, t, false)
 		})
 		t.Run(fileName+" native", func(t *testing.T) {
-			//t.Parallel()
+			t.Parallel()
 			path, err := filepath.Abs(fileName)
 			if err != nil {
 				t.Fatal(err)

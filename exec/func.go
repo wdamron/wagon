@@ -32,8 +32,8 @@ type compiledFunction struct {
 type asmBlock struct {
 	// address into executable memory where native assembly is located.
 	addr unsafe.Pointer
-	// how many bytes of the wasm instruction stream this asmBlock addresses.
-	stride uint
+	// where in the instruction stream to resume after native execution.
+	resumePC uint
 }
 
 type goFunction struct {

@@ -60,25 +60,24 @@ func (s *scanner) ScanFunc(bytecode []byte, meta *BytecodeMetadata) ([]Compilati
 		isInsideBranchTarget := meta.InboundTargets[int64(inst.Start)] && inst.Start > 0
 
 		if !s.supportedOpcodes[inst.Op] || isInsideBranchTarget {
-			//fmt.Printf("not supported: 0x%x\n", inst.Op)
 			// See if the candidate can be emitted.
 			if inProgress.Metrics.AllOps > 2 {
 				finishedCandidates = append(finishedCandidates, inProgress)
 			}
-			nextOp := uint(inst.Start + inst.Size)
-			inProgress = CompilationCandidate{
-				Beginning:        nextOp,
-				End:              nextOp,
-				StartInstruction: i,
-				EndInstruction:   i,
-				Metrics:          &Metrics{},
-			}
-		} else {
-			// Still a run of supported instructions - increment end
-			// cursor of current candidate.
-			inProgress.End = uint(inst.Start) + uint(inst.Size)
-			inProgress.EndInstruction++
+			// Reset the candidate.
+			inProgress = CompilationCandidate{Metrics: &Metrics{}}
+			continue
 		}
+
+		// Still a supported run.
+
+		if inProgress.Metrics.AllOps == 0 {
+			// First instruction of the candidate - setup structure.
+			inProgress.Beginning = uint(inst.Start)
+			inProgress.StartInstruction = i
+		}
+		inProgress.EndInstruction = i
+		inProgress.End = uint(inst.Start) + uint(inst.Size)
 
 		// TODO: Add to this table as backends support more opcodes.
 		switch inst.Op {
@@ -93,8 +92,9 @@ func (s *scanner) ScanFunc(bytecode []byte, meta *BytecodeMetadata) ([]Compilati
 		inProgress.Metrics.AllOps++
 	}
 
+	// End of instructions - emit the inProgress candidate if
+	// its at least 3 instructions.
 	if inProgress.Metrics.AllOps > 2 {
-		inProgress.End++
 		finishedCandidates = append(finishedCandidates, inProgress)
 	}
 

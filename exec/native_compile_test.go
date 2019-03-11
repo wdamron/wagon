@@ -105,8 +105,8 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 	if want := 1; len(fn.asm) != want {
 		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(compiledFunction).asm), want)
 	}
-	if want := 8; int(fn.asm[0].stride) != want {
-		t.Errorf("fn.asm[0].stride = %v, want %v", fn.asm[0].stride, want)
+	if want := 16; int(fn.asm[0].resumePC) != want {
+		t.Errorf("fn.asm[0].resumePC = %v, want %v", fn.asm[0].resumePC, want)
 	}
 
 	// The function bytecode should have been modified to call wagon.nativeExec,
@@ -132,20 +132,19 @@ func TestBasicAMD64(t *testing.T) {
 
 	constInst, _ := ops.New(ops.I64Const)
 	addInst, _ := ops.New(ops.I64Add)
-	cantOp, _ := ops.New(ops.I32Add)
 
 	code, meta := compile.Compile([]disasm.Instr{
 		{Op: constInst, Immediates: []interface{}{int32(100)}},
 		{Op: constInst, Immediates: []interface{}{int32(16)}},
 		{Op: constInst, Immediates: []interface{}{int32(4)}},
 		{Op: addInst},
-		{Op: cantOp},
+		{Op: addInst},
 	})
 	vm := &VM{
 		funcs: []function{
 			compiledFunction{
 				returns:      true,
-				maxDepth:     5,
+				maxDepth:     6,
 				code:         code,
 				branchTables: meta.BranchTables,
 				codeMeta:     meta,
@@ -154,6 +153,7 @@ func TestBasicAMD64(t *testing.T) {
 	}
 	vm.newFuncTable()
 
+	originalLen := len(code)
 	if err := vm.tryNativeCompile(); err != nil {
 		t.Fatalf("tryNativeCompile() failed: %v", err)
 	}
@@ -162,8 +162,8 @@ func TestBasicAMD64(t *testing.T) {
 	if want := 1; len(fn.asm) != want {
 		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(compiledFunction).asm), want)
 	}
-	if want := 16; int(fn.asm[0].stride) != want {
-		t.Errorf("fn.asm[0].stride = %v, want %v", fn.asm[0].stride, want)
+	if want := originalLen; int(fn.asm[0].resumePC) != want {
+		t.Errorf("fn.asm[0].stride = %v, want %v", fn.asm[0].resumePC, want)
 	}
 
 	// The function bytecode should have been modified to call wagon.nativeExec,

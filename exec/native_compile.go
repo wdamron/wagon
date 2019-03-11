@@ -17,8 +17,6 @@ const (
 	// wagon.nativeExec instruction and its parameter.
 	minInstBytes                = 5
 	minArithInstructionSequence = 2
-
-	nativeExecPrologueSize = 5
 )
 
 var (
@@ -108,8 +106,8 @@ func (vm *VM) tryNativeCompile() error {
 				return fmt.Errorf("PageAllocator.AllocateExec() failed: %v", err)
 			}
 			fn.asm = append(fn.asm, asmBlock{
-				addr:   addr,
-				stride: upper - lower,
+				addr:     addr,
+				resumePC: upper + 1,
 			})
 
 			// Patch the wasm opcode stream to call into the native section.
@@ -143,5 +141,5 @@ func (vm *VM) nativeCodeInvocation(asmIndex uint32) {
 	f := (uintptr)(unsafe.Pointer(&block.addr))
 	fp := **(**func(unsafe.Pointer, unsafe.Pointer))(unsafe.Pointer(&f))
 	fp(unsafe.Pointer(&vm.ctx.stack), unsafe.Pointer(&vm.ctx.locals))
-	vm.ctx.pc += int64(block.stride - minInstBytes - 1)
+	vm.ctx.pc = int64(block.resumePC)
 }

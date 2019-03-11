@@ -3,6 +3,7 @@ package compile
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 
 	ops "github.com/go-interpreter/wagon/wasm/operators"
 	asm "github.com/twitchyliquid64/golang-asm"
@@ -50,8 +51,8 @@ func (b *AMD64Backend) Build(candidate CompilationCandidate, code []byte, meta *
 	}
 	b.emitPreamble(builder)
 
-	for i := candidate.StartInstruction; i < candidate.EndInstruction; i++ {
-		//fmt.Printf("i=%d, meta=%+v, len=%d\n", i, meta[i], len(code))
+	for i := candidate.StartInstruction; i <= candidate.EndInstruction; i++ {
+		//fmt.Printf("i=%d, meta=%+v, len=%d\n", i, meta.Instructions[i], len(code))
 		inst := meta.Instructions[i]
 		switch inst.Op {
 		case ops.I64Const:
@@ -62,6 +63,8 @@ func (b *AMD64Backend) Build(candidate CompilationCandidate, code []byte, meta *
 			b.emitPushI64(builder, immediate)
 		case ops.I64Add, ops.I64Sub:
 			b.emitBinaryI64(builder, inst.Op)
+		default:
+			return nil, fmt.Errorf("cannot handle inst[%d].Op 0x%x", i, inst.Op)
 		}
 	}
 	ret := builder.NewProg()
