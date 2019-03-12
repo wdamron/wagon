@@ -20,7 +20,18 @@ type mmapBlock struct {
 
 // MMapAllocator copies instructions into executable memory.
 type MMapAllocator struct {
-	last *mmapBlock
+	last   *mmapBlock
+	blocks []*mmapBlock
+}
+
+// Close frees all pages allocted by the allocator.
+func (a *MMapAllocator) Close() error {
+	for _, block := range a.blocks {
+		if err := block.mem.Unmap(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AllocateExec allocates a block of executable memory with the given code contained.
@@ -40,6 +51,7 @@ func (a *MMapAllocator) AllocateExec(asm []byte) (unsafe.Pointer, error) {
 		consumed:  consumed,
 		remaining: uint32(alloc) - consumed,
 	}
+	a.blocks = append(a.blocks, a.last)
 	copy(m, asm)
 	return unsafe.Pointer(&m), nil
 }

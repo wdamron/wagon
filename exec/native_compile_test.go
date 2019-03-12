@@ -11,24 +11,13 @@ import (
 	ops "github.com/go-interpreter/wagon/wasm/operators"
 )
 
-var oldBackends []compilerVariant
-
-func setupNativeAsmBackendMocks(t *testing.T) (*mockSequenceScanner, *mockPageAllocator, *mockInstructionBuilder) {
+func fakeNativeCompiler(t *testing.T) *nativeCompiler {
 	t.Helper()
-	oldBackends = supportedNativeArchPlatforms
-	supportedNativeArchPlatforms = []compilerVariant{
-		{
-			OS:   runtime.GOOS,
-			Arch: runtime.GOARCH,
-		},
+	return &nativeCompiler{
+		Builder:   &mockInstructionBuilder{},
+		Scanner:   &mockSequenceScanner{},
+		allocator: &mockPageAllocator{},
 	}
-	s := &mockSequenceScanner{}
-	supportedNativeArchPlatforms[0].Scanner = s
-	p := &mockPageAllocator{}
-	supportedNativeArchPlatforms[0].PageAllocator = p
-	b := &mockInstructionBuilder{}
-	supportedNativeArchPlatforms[0].Builder = b
-	return s, p, b
 }
 
 type mockSequenceScanner struct {
@@ -45,6 +34,10 @@ func (a *mockPageAllocator) AllocateExec(asm []byte) (unsafe.Pointer, error) {
 	return unsafe.Pointer(&asm), nil
 }
 
+func (a *mockPageAllocator) Close() error {
+	return nil
+}
+
 type mockInstructionBuilder struct{}
 
 func (b *mockInstructionBuilder) Build(candidate compile.CompilationCandidate, code []byte, meta *compile.BytecodeMetadata) ([]byte, error) {
@@ -52,10 +45,7 @@ func (b *mockInstructionBuilder) Build(candidate compile.CompilationCandidate, c
 }
 
 func TestNativeAsmStructureSetup(t *testing.T) {
-	scanner, _, _ := setupNativeAsmBackendMocks(t)
-	defer func() {
-		supportedNativeArchPlatforms = oldBackends
-	}()
+	nc := fakeNativeCompiler(t)
 
 	constInst, _ := ops.New(ops.I32Const)
 	addInst, _ := ops.New(ops.I32Add)
@@ -84,11 +74,12 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 				code: wasm,
 			},
 		},
+		nativeBackend: nc,
 	}
 	vm.newFuncTable()
 
 	// setup mocks.
-	scanner.emit = []compile.CompilationCandidate{
+	nc.Scanner.(*mockSequenceScanner).emit = []compile.CompilationCandidate{
 		// Sequence with single integer op - should not compiled.
 		compile.CompilationCandidate{Beginning: 0, End: 7, EndInstruction: 3, Metrics: &compile.Metrics{IntegerOps: 1}},
 		// Sequence with two integer ops - should be emitted.
@@ -153,6 +144,8 @@ func TestBasicAMD64(t *testing.T) {
 	}
 	vm.newFuncTable()
 
+	_, be := nativeBackend()
+	vm.nativeBackend = be
 	originalLen := len(code)
 	if err := vm.tryNativeCompile(); err != nil {
 		t.Fatalf("tryNativeCompile() failed: %v", err)

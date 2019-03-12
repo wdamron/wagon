@@ -71,6 +71,8 @@ type VM struct {
 	RecoverPanic bool
 
 	abort bool // Flag for host functions to terminate execution
+
+	nativeBackend *nativeCompiler
 }
 
 // As per the WebAssembly spec: https://github.com/WebAssembly/design/blob/27ac254c854994103c24834a994be16f74f54186/Semantics.md#linear-memory
@@ -164,8 +166,12 @@ func NewVMWithOptions(module *wasm.Module, options *VMOptions) (*VM, error) {
 	}
 
 	if options.EnableAOT {
-		if err := vm.tryNativeCompile(); err != nil {
-			return nil, err
+		supportedBackend, backend := nativeBackend()
+		if supportedBackend {
+			vm.nativeBackend = backend
+			if err := vm.tryNativeCompile(); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -431,6 +437,17 @@ outer:
 		return vm.ctx.stack[len(vm.ctx.stack)-1]
 	}
 	return 0
+}
+
+// Close frees any resources managed by the VM.
+func (vm *VM) Close() error {
+	if vm.nativeBackend != nil {
+		if err := vm.nativeBackend.Close(); err != nil {
+			return err
+		}
+	}
+	vm.abort = true // prevents further use.
+	return nil
 }
 
 // Process is a proxy passed to host functions in order to access

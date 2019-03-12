@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -20,31 +21,43 @@ const (
 )
 
 var (
-	amd64Backend = &compile.AMD64Backend{}
-
-	supportedNativeArchPlatforms = []compilerVariant{
+	supportedNativeArchPlatforms = []struct {
+		Arch, OS string
+		make     func(endianness binary.ByteOrder) *nativeCompiler
+	}{
 		{
-			Arch:          "amd64",
-			OS:            "linux",
-			PageAllocator: &compile.MMapAllocator{},
-			Scanner:       amd64Backend.Scanner(),
-			Builder:       amd64Backend,
+			Arch: "amd64",
+			OS:   "linux",
+			make: makeAMD64NativeBackend,
 		},
 	}
 )
 
-// compilerVariant parameterizes backends for native compilation.
-type compilerVariant struct {
-	Arch, OS      string
-	PageAllocator pageAllocator
-	Scanner       sequenceScanner
-	Builder       instructionBuilder
+// nativeCompiler represents a backend for native code generation + execution.
+type nativeCompiler struct {
+	Scanner   sequenceScanner
+	Builder   instructionBuilder
+	allocator pageAllocator
+}
+
+func (c *nativeCompiler) Close() error {
+	return c.allocator.Close()
+}
+
+func makeAMD64NativeBackend(endianness binary.ByteOrder) *nativeCompiler {
+	be := &compile.AMD64Backend{}
+	return &nativeCompiler{
+		Builder:   be,
+		Scanner:   be.Scanner(),
+		allocator: &compile.MMapAllocator{},
+	}
 }
 
 // pageAllocator is responsible for the efficient allocation of
 // executable, aligned regions of executable memory.
 type pageAllocator interface {
 	AllocateExec(asm []byte) (unsafe.Pointer, error)
+	Close() error
 }
 
 // sequenceScanner is responsible for detecting runs of supported opcodes
@@ -62,18 +75,18 @@ type instructionBuilder interface {
 	Build(candidate compile.CompilationCandidate, code []byte, meta *compile.BytecodeMetadata) ([]byte, error)
 }
 
-func nativeBackend() (bool, *compilerVariant) {
+func nativeBackend() (bool, *nativeCompiler) {
 	for _, c := range supportedNativeArchPlatforms {
 		if c.Arch == runtime.GOARCH && c.OS == runtime.GOOS {
-			return true, &c
+			backend := c.make(endianess)
+			return true, backend
 		}
 	}
 	return false, nil
 }
 
 func (vm *VM) tryNativeCompile() error {
-	supportedPlatform, backend := nativeBackend()
-	if !supportedPlatform {
+	if vm.nativeBackend == nil {
 		return nil
 	}
 
@@ -83,7 +96,7 @@ func (vm *VM) tryNativeCompile() error {
 		}
 
 		fn := vm.funcs[i].(compiledFunction)
-		candidates, err := backend.Scanner.ScanFunc(fn.code, fn.codeMeta)
+		candidates, err := vm.nativeBackend.Scanner.ScanFunc(fn.code, fn.codeMeta)
 		if err != nil {
 			return fmt.Errorf("AOT scan failed on vm.funcs[%d]: %v", i, err)
 		}
@@ -97,11 +110,11 @@ func (vm *VM) tryNativeCompile() error {
 				continue
 			}
 
-			asm, err := backend.Builder.Build(candidate, fn.code, fn.codeMeta)
+			asm, err := vm.nativeBackend.Builder.Build(candidate, fn.code, fn.codeMeta)
 			if err != nil {
 				return fmt.Errorf("native compilation failed on vm.funcs[%d].code[%d:%d]: %v", i, lower, upper, err)
 			}
-			addr, err := backend.PageAllocator.AllocateExec(asm)
+			addr, err := vm.nativeBackend.allocator.AllocateExec(asm)
 			if err != nil {
 				return fmt.Errorf("PageAllocator.AllocateExec() failed: %v", err)
 			}

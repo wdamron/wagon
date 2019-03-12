@@ -4,6 +4,7 @@ import "testing"
 
 func TestMMapAllocator(t *testing.T) {
 	a := &MMapAllocator{}
+	defer a.Close()
 
 	shortAlloc, err := a.AllocateExec([]byte{1, 2, 3, 4})
 	if err != nil {
