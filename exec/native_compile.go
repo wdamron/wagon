@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
-	"unsafe"
 
 	"github.com/go-interpreter/wagon/exec/internal/compile"
 	ops "github.com/go-interpreter/wagon/wasm/operators"
@@ -24,18 +23,12 @@ const (
 	minArithInstructionSequence = 2
 )
 
-var (
-	supportedNativeArchPlatforms = []struct {
-		Arch, OS string
-		make     func(endianness binary.ByteOrder) *nativeCompiler
-	}{
-		{
-			Arch: "amd64",
-			OS:   "linux",
-			make: makeAMD64NativeBackend,
-		},
-	}
-)
+var supportedNativeArchs []nativeArch
+
+type nativeArch struct {
+	Arch, OS string
+	make     func(endianness binary.ByteOrder) *nativeCompiler
+}
 
 // nativeCompiler represents a backend for native code generation + execution.
 type nativeCompiler struct {
@@ -48,19 +41,10 @@ func (c *nativeCompiler) Close() error {
 	return c.allocator.Close()
 }
 
-func makeAMD64NativeBackend(endianness binary.ByteOrder) *nativeCompiler {
-	be := &compile.AMD64Backend{}
-	return &nativeCompiler{
-		Builder:   be,
-		Scanner:   be.Scanner(),
-		allocator: &compile.MMapAllocator{},
-	}
-}
-
 // pageAllocator is responsible for the efficient allocation of
 // executable, aligned regions of executable memory.
 type pageAllocator interface {
-	AllocateExec(asm []byte) (unsafe.Pointer, error)
+	AllocateExec(asm []byte) (compile.NativeCodeUnit, error)
 	Close() error
 }
 
@@ -80,7 +64,7 @@ type instructionBuilder interface {
 }
 
 func nativeBackend() (bool, *nativeCompiler) {
-	for _, c := range supportedNativeArchPlatforms {
+	for _, c := range supportedNativeArchs {
 		if c.Arch == runtime.GOARCH && c.OS == runtime.GOOS {
 			backend := c.make(endianess)
 			return true, backend
@@ -118,13 +102,13 @@ func (vm *VM) tryNativeCompile() error {
 			if err != nil {
 				return fmt.Errorf("native compilation failed on vm.funcs[%d].code[%d:%d]: %v", i, lower, upper, err)
 			}
-			addr, err := vm.nativeBackend.allocator.AllocateExec(asm)
+			unit, err := vm.nativeBackend.allocator.AllocateExec(asm)
 			if err != nil {
 				return fmt.Errorf("PageAllocator.AllocateExec() failed: %v", err)
 			}
 			fn.asm = append(fn.asm, asmBlock{
-				addr:     addr,
-				resumePC: upper + 1,
+				nativeUnit: unit,
+				resumePC:   upper + 1,
 			})
 
 			// Patch the wasm opcode stream to call into the native section.
@@ -155,8 +139,6 @@ func (vm *VM) tryNativeCompile() error {
 // [fp+pointerSize:fp+pointerSize*2]: sliceHeader for locals variables.
 func (vm *VM) nativeCodeInvocation(asmIndex uint32) {
 	block := (*vm.ctx.asm)[asmIndex]
-	f := (uintptr)(unsafe.Pointer(&block.addr))
-	fp := **(**func(unsafe.Pointer, unsafe.Pointer))(unsafe.Pointer(&f))
-	fp(unsafe.Pointer(&vm.ctx.stack), unsafe.Pointer(&vm.ctx.locals))
+	block.nativeUnit.Invoke(&vm.ctx.stack, &vm.ctx.locals)
 	vm.ctx.pc = int64(block.resumePC)
 }

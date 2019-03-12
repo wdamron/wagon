@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build !appengine
+
 package exec
 
 import (
 	"bytes"
 	"runtime"
 	"testing"
-	"unsafe"
 
 	"github.com/go-interpreter/wagon/disasm"
 	"github.com/go-interpreter/wagon/exec/internal/compile"
@@ -34,8 +35,8 @@ func (s *mockSequenceScanner) ScanFunc(bc []byte, meta *compile.BytecodeMetadata
 
 type mockPageAllocator struct{}
 
-func (a *mockPageAllocator) AllocateExec(asm []byte) (unsafe.Pointer, error) {
-	return unsafe.Pointer(&asm), nil
+func (a *mockPageAllocator) AllocateExec(asm []byte) (compile.NativeCodeUnit, error) {
+	return nil, nil
 }
 
 func (a *mockPageAllocator) Close() error {

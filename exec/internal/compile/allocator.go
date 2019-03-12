@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build !appengine
+
 package compile
 
 import (
@@ -39,7 +41,7 @@ func (a *MMapAllocator) Close() error {
 }
 
 // AllocateExec allocates a block of executable memory with the given code contained.
-func (a *MMapAllocator) AllocateExec(asm []byte) (unsafe.Pointer, error) {
+func (a *MMapAllocator) AllocateExec(asm []byte) (NativeCodeUnit, error) {
 	// TODO: Use free pages where possible.
 	alloc := minAllocSize
 	consumed := uint32(len(asm)+allocationAlignment) & ^uint32(allocationAlignment)
@@ -57,5 +59,9 @@ func (a *MMapAllocator) AllocateExec(asm []byte) (unsafe.Pointer, error) {
 	}
 	a.blocks = append(a.blocks, a.last)
 	copy(m, asm)
-	return unsafe.Pointer(&m), nil
+
+	out := asmBlock{
+		mem: unsafe.Pointer(&m),
+	}
+	return &out, nil
 }

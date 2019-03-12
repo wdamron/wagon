@@ -15,6 +15,11 @@ import (
 	"github.com/twitchyliquid64/golang-asm/obj/x86"
 )
 
+// NativeCodeUnit represents compiled native code.
+type NativeCodeUnit interface {
+	Invoke(stack, locals *[]uint64)
+}
+
 // Details of the AMD64 backend:
 // Reserved registers (for now):
 //  - R10 - pointer to stack sliceHeader

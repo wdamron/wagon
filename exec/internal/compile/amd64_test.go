@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build !appengine
+
 package compile
 
 import (
@@ -54,16 +56,14 @@ func TestAMD64StackPush(t *testing.T) {
 	// cmd.Stdout = os.Stdout
 	// cmd.Run()
 
-	ptr, err := allocator.AllocateExec(out)
+	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	fakeStack := make([]uint64, 0, 5)
 	fakeLocals := make([]uint64, 0, 0)
-	f := (uintptr)(unsafe.Pointer(&ptr))
-	fp := **(**func(unsafe.Pointer, unsafe.Pointer))(unsafe.Pointer(&f))
-	fp(unsafe.Pointer(&fakeStack), unsafe.Pointer(&fakeLocals))
+	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
 	if want := 2; len(fakeStack) != want {
 		t.Errorf("fakeStack.Len = %d, want %d", len(fakeStack), want)
@@ -101,7 +101,7 @@ func TestAMD64StackPop(t *testing.T) {
 	// cmd.Stdout = os.Stdout
 	// cmd.Run()
 
-	ptr, err := allocator.AllocateExec(out)
+	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,9 +109,7 @@ func TestAMD64StackPop(t *testing.T) {
 	fakeStack := make([]uint64, 2, 5)
 	fakeStack[1] = 1337
 	fakeLocals := make([]uint64, 0, 0)
-	f := (uintptr)(unsafe.Pointer(&ptr))
-	fp := **(**func(unsafe.Pointer, unsafe.Pointer))(unsafe.Pointer(&f))
-	fp(unsafe.Pointer(&fakeStack), unsafe.Pointer(&fakeLocals))
+	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
 	if want := 1; len(fakeStack) != want {
 		t.Errorf("fakeStack.Len = %d, want %d", len(fakeStack), want)
@@ -145,7 +143,7 @@ func TestAMD64ConstAdd(t *testing.T) {
 	// cmd.Stdout = os.Stdout
 	// cmd.Run()
 
-	ptr, err := allocator.AllocateExec(out)
+	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,9 +151,7 @@ func TestAMD64ConstAdd(t *testing.T) {
 	fakeStack := make([]uint64, 1, 5)
 	fakeStack[0] = 12
 	fakeLocals := make([]uint64, 0, 0)
-	f := (uintptr)(unsafe.Pointer(&ptr))
-	fp := **(**func(unsafe.Pointer, unsafe.Pointer))(unsafe.Pointer(&f))
-	fp(unsafe.Pointer(&fakeStack), unsafe.Pointer(&fakeLocals))
+	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
 	if want := 1; len(fakeStack) != want {
 		t.Fatalf("fakeStack.Len = %d, want %d", len(fakeStack), want)

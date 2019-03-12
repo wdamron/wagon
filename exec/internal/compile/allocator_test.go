@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build !appengine
+
 package compile
 
 import "testing"
@@ -14,7 +16,7 @@ func TestMMapAllocator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := **(**[4]byte)(shortAlloc); d != [4]byte{1, 2, 3, 4} {
+	if d := **(**[4]byte)(shortAlloc.(*asmBlock).mem); d != [4]byte{1, 2, 3, 4} {
 		t.Errorf("shortAlloc = %d, want [4]byte{1,2,3,4}", d)
 	}
 	if want := uint32(128); a.last.consumed != want {
@@ -31,7 +33,7 @@ func TestMMapAllocator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := **(**[2]byte)(massiveAlloc); d != [2]byte{0, 5} {
+	if d := **(**[2]byte)(massiveAlloc.(*asmBlock).mem); d != [2]byte{0, 5} {
 		t.Errorf("bigAlloc = %d, want [2]byte{31, 0}", d)
 	}
 	if want := uint32(36 * 1024); a.last.consumed != want {

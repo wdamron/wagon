@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"unsafe"
 
 	"github.com/go-interpreter/wagon/exec/internal/compile"
 )
@@ -30,8 +29,8 @@ type compiledFunction struct {
 }
 
 type asmBlock struct {
-	// address into executable memory where native assembly is located.
-	addr unsafe.Pointer
+	// Compiled unit in native machine code.
+	nativeUnit compile.NativeCodeUnit
 	// where in the instruction stream to resume after native execution.
 	resumePC uint
 }
