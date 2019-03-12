@@ -42,21 +42,11 @@ func TestAssemble(t *testing.T) {
 				if m.Code == nil {
 					t.SkipNow()
 				}
-				for inst, f := range m.Code.Bodies {
+				for _, f := range m.Code.Bodies {
 					d, err := disasm.Disassemble(f.Code)
 					if err != nil {
 						t.Fatalf("disassemble failed: %v", err)
 					}
-
-					// check inst.EncodedLen matches the total size.
-					var encodedLenSum int
-					for _, i := range d {
-						encodedLenSum += i.EncodedLen
-					}
-					if encodedLenSum != len(f.Code) {
-						t.Errorf("[Body %04d] encodedLenSum = %d, want %d", inst, encodedLenSum, len(f.Code))
-					}
-
 					code, err := disasm.Assemble(d)
 					if err != nil {
 						t.Fatalf("assemble failed: %v", err)
