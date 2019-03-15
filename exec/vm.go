@@ -47,7 +47,7 @@ type context struct {
 	stack   []uint64
 	locals  []uint64
 	code    []byte
-	asm     *[]asmBlock
+	asm     []asmBlock
 	pc      int64
 	curFunc int64
 }
@@ -80,20 +80,29 @@ const wasmPageSize = 65536 // (64 KB)
 
 var endianess = binary.LittleEndian
 
-// VMOptions describes configuration for a VM.
-type VMOptions struct {
-	// EnableAOT enables ahead-of-time compilation of supported opcodes
-	// into runs of native instructions, if wagon supports native compilation
-	// for the current architecture.
+type config struct {
 	EnableAOT bool
+}
+
+// VMOptions describes a customization that can be applied to the VM.
+type VMOption func(c *config)
+
+// EnableAOT enables ahead-of-time compilation of supported opcodes
+// into runs of native instructions, if wagon supports native compilation
+// for the current architecture.
+func EnableAOT(v bool) VMOption {
+	return func(c *config) {
+		c.EnableAOT = v
+	}
 }
 
 // NewVMWithOptions creates a new VM from a given module and options. If the module defines
 // a start function, it will be executed.
-func NewVMWithOptions(module *wasm.Module, options *VMOptions) (*VM, error) {
+func NewVMWithOptions(module *wasm.Module, opts ...VMOption) (*VM, error) {
 	var vm VM
-	if options == nil {
-		options = &VMOptions{}
+	var options config
+	for _, opt := range opts {
+		opt(&options)
 	}
 
 	if module.Memory != nil && len(module.Memory.Entries) != 0 {
@@ -188,7 +197,7 @@ func NewVMWithOptions(module *wasm.Module, options *VMOptions) (*VM, error) {
 // NewVM creates a new VM from a given module. If the module defines a
 // start function, it will be executed.
 func NewVM(module *wasm.Module) (*VM, error) {
-	return NewVMWithOptions(module, nil)
+	return NewVMWithOptions(module)
 }
 
 // Memory returns the linear memory space for the VM.
@@ -326,7 +335,7 @@ func (vm *VM) ExecCode(fnIndex int64, args ...uint64) (rtrn interface{}, err err
 	vm.ctx.locals = make([]uint64, compiled.totalLocalVars)
 	vm.ctx.pc = 0
 	vm.ctx.code = compiled.code
-	vm.ctx.asm = &compiled.asm
+	vm.ctx.asm = compiled.asm
 	vm.ctx.curFunc = fnIndex
 
 	for i, arg := range args {

@@ -268,8 +268,7 @@ func runTest(fileName string, testCases []testCase, t testing.TB, nativeBackend 
 		t.Fatalf("%s: %v", fileName, err)
 	}
 
-	opts := exec.VMOptions{EnableAOT: nativeBackend}
-	vm, err := exec.NewVMWithOptions(module, &opts)
+	vm, err := exec.NewVMWithOptions(module, exec.EnableAOT(nativeBackend))
 	if err != nil {
 		t.Fatalf("%s: %v", fileName, err)
 	}

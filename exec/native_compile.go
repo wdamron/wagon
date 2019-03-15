@@ -138,7 +138,7 @@ func (vm *VM) tryNativeCompile() error {
 // [fp:fp+pointerSize]: sliceHeader for the stack.
 // [fp+pointerSize:fp+pointerSize*2]: sliceHeader for locals variables.
 func (vm *VM) nativeCodeInvocation(asmIndex uint32) {
-	block := (*vm.ctx.asm)[asmIndex]
+	block := vm.ctx.asm[asmIndex]
 	block.nativeUnit.Invoke(&vm.ctx.stack, &vm.ctx.locals)
 	vm.ctx.pc = int64(block.resumePC)
 }

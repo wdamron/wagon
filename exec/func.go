@@ -104,7 +104,7 @@ func (compiled compiledFunction) call(vm *VM, index int64) {
 		stack:   newStack,
 		locals:  locals,
 		code:    compiled.code,
-		asm:     &compiled.asm,
+		asm:     compiled.asm,
 		pc:      0,
 		curFunc: index,
 	}
