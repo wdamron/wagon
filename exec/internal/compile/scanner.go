@@ -1,4 +1,4 @@
-// Copyright 2017 The go-interpreter Authors.  All rights reserved.
+// Copyright 2019 The go-interpreter Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -31,7 +31,15 @@ type CompilationCandidate struct {
 	// InstructionMeta index of the last instruction.
 	EndInstruction int
 	// Metrics about the instructions between first & last index.
-	Metrics *Metrics
+	Metrics Metrics
+}
+
+func (s *CompilationCandidate) reset() {
+	s.Beginning = 0
+	s.End = 0
+	s.StartInstruction = 0
+	s.EndInstruction = 0
+	s.Metrics = Metrics{}
 }
 
 // Bounds returns the beginning & end index in the bytecode which
@@ -54,8 +62,7 @@ type Metrics struct {
 // bytecode which could be compiled into function code.
 func (s *scanner) ScanFunc(bytecode []byte, meta *BytecodeMetadata) ([]CompilationCandidate, error) {
 	var finishedCandidates []CompilationCandidate
-
-	inProgress := CompilationCandidate{End: 1, Metrics: &Metrics{}}
+	inProgress := CompilationCandidate{}
 
 	for i, inst := range meta.Instructions {
 		// Except for the first instruction, we cant emit a native section
@@ -68,8 +75,7 @@ func (s *scanner) ScanFunc(bytecode []byte, meta *BytecodeMetadata) ([]Compilati
 			if inProgress.Metrics.AllOps > 2 {
 				finishedCandidates = append(finishedCandidates, inProgress)
 			}
-			// Reset the candidate.
-			inProgress = CompilationCandidate{Metrics: &Metrics{}}
+			inProgress.reset()
 			continue
 		}
 

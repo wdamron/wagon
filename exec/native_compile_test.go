@@ -1,4 +1,4 @@
-// Copyright 2017 The go-interpreter Authors.  All rights reserved.
+// Copyright 2019 The go-interpreter Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -86,9 +86,9 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 	// setup mocks.
 	nc.Scanner.(*mockSequenceScanner).emit = []compile.CompilationCandidate{
 		// Sequence with single integer op - should not compiled.
-		compile.CompilationCandidate{Beginning: 0, End: 7, EndInstruction: 3, Metrics: &compile.Metrics{IntegerOps: 1}},
+		compile.CompilationCandidate{Beginning: 0, End: 7, EndInstruction: 3, Metrics: compile.Metrics{IntegerOps: 1}},
 		// Sequence with two integer ops - should be emitted.
-		compile.CompilationCandidate{Beginning: 7, End: 15, StartInstruction: 4, EndInstruction: 9, Metrics: &compile.Metrics{IntegerOps: 2}},
+		compile.CompilationCandidate{Beginning: 7, End: 15, StartInstruction: 4, EndInstruction: 9, Metrics: compile.Metrics{IntegerOps: 2}},
 	}
 
 	if err := vm.tryNativeCompile(); err != nil {
@@ -98,21 +98,21 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 	// Our scanner emitted two sequences. The first should not have resulted in
 	// compilation, but the second should have. Lets check thats the case.
 	fn := vm.funcs[0].(compiledFunction)
-	if want := 1; len(fn.asm) != want {
-		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(compiledFunction).asm), want)
+	if got, want := len(fn.asm), 1; got != want {
+		t.Fatalf("len(fn.asm) = %d, want %d", got, want)
 	}
-	if want := 16; int(fn.asm[0].resumePC) != want {
-		t.Errorf("fn.asm[0].resumePC = %v, want %v", fn.asm[0].resumePC, want)
+	if got, want := int(fn.asm[0].resumePC), 16; got != want {
+		t.Errorf("fn.asm[0].resumePC = %v, want %v", got, want)
 	}
 
 	// The function bytecode should have been modified to call wagon.nativeExec,
 	// with the index of the block (0) following, and remaining bytes set to the
 	// unreachable opcode.
-	if want := ops.WagonNativeExec; fn.code[7] != want {
-		t.Errorf("fn.code[7] = %v, want %v", fn.code[7], want)
+	if got, want := fn.code[7], ops.WagonNativeExec; got != want {
+		t.Errorf("fn.code[7] = %v, want %v", got, want)
 	}
-	if want := []byte{0, 0, 0, 0}; !bytes.Equal(fn.code[8:12], want) {
-		t.Errorf("fn.code[8:12] = %v, want %v", fn.code[8:12], want)
+	if got, want := fn.code[8:12], []byte{0, 0, 0, 0}; !bytes.Equal(got, want) {
+		t.Errorf("fn.code[8:12] = %v, want %v", got, want)
 	}
 	for i := 13; i < len(fn.code)-2; i++ {
 		if fn.code[i] != ops.Unreachable {

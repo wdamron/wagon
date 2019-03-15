@@ -1,11 +1,10 @@
-// Copyright 2017 The go-interpreter Authors.  All rights reserved.
+// Copyright 2019 The go-interpreter Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package compile
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 
@@ -65,13 +64,11 @@ func (b *AMD64Backend) Build(candidate CompilationCandidate, code []byte, meta *
 		inst := meta.Instructions[i]
 		switch inst.Op {
 		case ops.I64Const:
-			immediate, err := b.readIntImmediate(code, inst)
-			if err != nil {
-				return nil, err
-			}
-			b.emitPushI64(builder, immediate)
+			b.emitPushI64(builder, b.readIntImmediate(code, inst))
 		case ops.I64Add, ops.I64Sub:
-			b.emitBinaryI64(builder, inst.Op)
+			if err := b.emitBinaryI64(builder, inst.Op); err != nil {
+				return nil, fmt.Errorf("emitBinaryI64: %v", err)
+			}
 		default:
 			return nil, fmt.Errorf("cannot handle inst[%d].Op 0x%x", i, inst.Op)
 		}
@@ -88,15 +85,11 @@ func (b *AMD64Backend) Build(candidate CompilationCandidate, code []byte, meta *
 	return out, nil
 }
 
-func (b *AMD64Backend) readIntImmediate(code []byte, meta InstructionMetadata) (uint64, error) {
+func (b *AMD64Backend) readIntImmediate(code []byte, meta InstructionMetadata) uint64 {
 	if meta.Size == 5 {
-		var out uint32
-		err := binary.Read(bytes.NewReader(code[meta.Start+1:meta.Start+meta.Size]), binary.LittleEndian, &out)
-		return uint64(out), err
+		return uint64(binary.LittleEndian.Uint32(code[meta.Start+1 : meta.Start+meta.Size]))
 	}
-	var out uint64
-	err := binary.Read(bytes.NewReader(code[meta.Start+1:meta.Start+meta.Size]), binary.LittleEndian, &out)
-	return out, err
+	return binary.LittleEndian.Uint64(code[meta.Start+1 : meta.Start+meta.Size])
 }
 
 func (b *AMD64Backend) emitWasmStackLoad(builder *asm.Builder, reg int16) {
@@ -217,7 +210,7 @@ func (b *AMD64Backend) emitWasmStackPush(builder *asm.Builder, reg int16) {
 	builder.AddInstruction(prog)
 }
 
-func (b *AMD64Backend) emitBinaryI64(builder *asm.Builder, op byte) {
+func (b *AMD64Backend) emitBinaryI64(builder *asm.Builder, op byte) error {
 	b.emitWasmStackLoad(builder, x86.REG_R9)
 	b.emitWasmStackLoad(builder, x86.REG_AX)
 
@@ -231,10 +224,13 @@ func (b *AMD64Backend) emitBinaryI64(builder *asm.Builder, op byte) {
 		prog.As = x86.AADDQ
 	case ops.I64Sub:
 		prog.As = x86.ASUBQ
+	default:
+		return fmt.Errorf("cannot handle op: %x", op)
 	}
 	builder.AddInstruction(prog)
 
 	b.emitWasmStackPush(builder, x86.REG_AX)
+	return nil
 }
 
 func (b *AMD64Backend) emitPushI64(builder *asm.Builder, c uint64) {

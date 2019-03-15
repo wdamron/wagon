@@ -1,8 +1,8 @@
-// Copyright 2017 The go-interpreter Authors.  All rights reserved.
+// Copyright 2019 The go-interpreter Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !appengine
+// +build !appengine amd64
 
 package compile
 
@@ -19,7 +19,7 @@ import (
 )
 
 func TestAMD64StackPush(t *testing.T) {
-	if runtime.GOARCH != "amd64" || runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" {
 		t.SkipNow()
 	}
 	allocator := &MMapAllocator{}
@@ -65,19 +65,19 @@ func TestAMD64StackPush(t *testing.T) {
 	fakeLocals := make([]uint64, 0, 0)
 	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
-	if want := 2; len(fakeStack) != want {
-		t.Errorf("fakeStack.Len = %d, want %d", len(fakeStack), want)
+	if got, want := len(fakeStack), 2; got != want {
+		t.Errorf("fakeStack.Len = %d, want %d", got, want)
 	}
-	if want := uint64(1234); fakeStack[0] != want {
-		t.Errorf("fakeStack[0] = %d, want %d", fakeStack[0], want)
+	if got, want := fakeStack[0], uint64(1234); got != want {
+		t.Errorf("fakeStack[0] = %d, want %d", got, want)
 	}
-	if want := uint64(5678); fakeStack[1] != want {
-		t.Errorf("fakeStack[1] = %d, want %d", fakeStack[1], want)
+	if got, want := fakeStack[1], uint64(5678); got != want {
+		t.Errorf("fakeStack[1] = %d, want %d", got, want)
 	}
 }
 
 func TestAMD64StackPop(t *testing.T) {
-	if runtime.GOARCH != "amd64" || runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" {
 		t.SkipNow()
 	}
 	allocator := &MMapAllocator{}
@@ -111,16 +111,16 @@ func TestAMD64StackPop(t *testing.T) {
 	fakeLocals := make([]uint64, 0, 0)
 	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
-	if want := 1; len(fakeStack) != want {
-		t.Errorf("fakeStack.Len = %d, want %d", len(fakeStack), want)
+	if got, want := len(fakeStack), 1; got != want {
+		t.Errorf("fakeStack.Len = %d, want %d", got, want)
 	}
-	if want := uint64(1337); fakeStack[0] != want {
-		t.Errorf("fakeStack[0] = %d, want %d", fakeStack[0], want)
+	if got, want := fakeStack[0], uint64(1337); got != want {
+		t.Errorf("fakeStack[0] = %d, want %d", got, want)
 	}
 }
 
 func TestAMD64ConstAdd(t *testing.T) {
-	if runtime.GOARCH != "amd64" || runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" {
 		t.SkipNow()
 	}
 	allocator := &MMapAllocator{}
@@ -153,25 +153,33 @@ func TestAMD64ConstAdd(t *testing.T) {
 	fakeLocals := make([]uint64, 0, 0)
 	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
-	if want := 1; len(fakeStack) != want {
-		t.Fatalf("fakeStack.Len = %d, want %d", len(fakeStack), want)
+	if got, want := len(fakeStack), 1; got != want {
+		t.Fatalf("fakeStack.Len = %d, want %d", got, want)
 	}
-	if want := uint64(15); fakeStack[0] != want {
-		t.Errorf("fakeStack[0] = %d, want %d", fakeStack[0], want)
+	if got, want := fakeStack[0], uint64(15); got != want {
+		t.Errorf("fakeStack[0] = %d, want %d", got, want)
 	}
 }
 
+// TestSliceMemoryLayoutAMD64 tests assumptions about the memory layout
+// of slices have not changed. These are not specified in the Go
+// spec.
+// Specifically, we expect the Go compiler lays out slice headers
+// like this:
+//    0000: pointer to first element
+//    0008: uint64 length of the slice
+//    0010: uint64 capacity of the slice.
+//
+// This test should fail if this ever changes. In that case, stack handling
+// instructions that are emitted (emitWasmStackLoad/emitWasmStackPush) will
+// need to be revised to match the new memory layout.
 func TestSliceMemoryLayoutAMD64(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.SkipNow()
-	}
-
 	slice := make([]uint64, 2, 5)
 	mem := (*[24]byte)(unsafe.Pointer(&slice))
-	if want := uint64(2); binary.LittleEndian.Uint64(mem[8:16]) != want {
-		t.Errorf("Got len = %d, want %d", binary.LittleEndian.Uint64(mem[8:16]), want)
+	if got, want := binary.LittleEndian.Uint64(mem[8:16]), uint64(2); got != want {
+		t.Errorf("Got len = %d, want %d", got, want)
 	}
-	if want := uint64(5); binary.LittleEndian.Uint64(mem[16:24]) != want {
-		t.Errorf("Got cap = %d, want %d", binary.LittleEndian.Uint64(mem[16:24]), want)
+	if got, want := binary.LittleEndian.Uint64(mem[16:24]), uint64(5); got != want {
+		t.Errorf("Got cap = %d, want %d", got, want)
 	}
 }

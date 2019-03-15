@@ -80,6 +80,12 @@ var (
 	OpDiscardPreserveTop byte = 0x05
 )
 
+const (
+	// instAndInt64Len represents the number of bytes consumed by a wire
+	// representation of an instruction and an int64.
+	instAndInt64Len = 9
+)
+
 // Target is the "target" of a br_table instruction.
 // Unlike other control instructions, br_table does jumps and discarding all
 // by itself.
@@ -176,7 +182,7 @@ func Compile(disassembly []disasm.Instr) ([]byte, *BytecodeMetadata) {
 			instr.Immediates = []interface{}{instr.Immediates[1].(uint32)}
 		case ops.If:
 			curBlockDepth++
-			emitMetadata(OpJmpZ, buffer.Len(), 9)
+			emitMetadata(OpJmpZ, buffer.Len(), instAndInt64Len)
 			buffer.WriteByte(OpJmpZ)
 			blocks[curBlockDepth] = &block{
 				ifBlock:        true,
@@ -212,11 +218,11 @@ func Compile(disassembly []disasm.Instr) ([]byte, *BytecodeMetadata) {
 					op = OpDiscardPreserveTop
 				}
 
-				emitMetadata(op, buffer.Len(), 9)
+				emitMetadata(op, buffer.Len(), instAndInt64Len)
 				buffer.WriteByte(op)
 				binary.Write(buffer, binary.LittleEndian, ifInstr.NewStack.StackTopDiff)
 			}
-			emitMetadata(OpJmp, buffer.Len(), 9)
+			emitMetadata(OpJmp, buffer.Len(), instAndInt64Len)
 			buffer.WriteByte(OpJmp)
 			ifBlockEndOffset := int64(buffer.Len())
 			binary.Write(buffer, binary.LittleEndian, int64(0))
@@ -244,7 +250,7 @@ func Compile(disassembly []disasm.Instr) ([]byte, *BytecodeMetadata) {
 					// a value on to the stack
 					op = OpDiscardPreserveTop
 				}
-				emitMetadata(op, buffer.Len(), 9)
+				emitMetadata(op, buffer.Len(), instAndInt64Len)
 				buffer.WriteByte(op)
 				binary.Write(buffer, binary.LittleEndian, instr.NewStack.StackTopDiff)
 			}
@@ -275,11 +281,11 @@ func Compile(disassembly []disasm.Instr) ([]byte, *BytecodeMetadata) {
 				if instr.NewStack.PreserveTop {
 					op = OpDiscardPreserveTop
 				}
-				emitMetadata(op, buffer.Len(), 9)
+				emitMetadata(op, buffer.Len(), instAndInt64Len)
 				buffer.WriteByte(op)
 				binary.Write(buffer, binary.LittleEndian, instr.NewStack.StackTopDiff)
 			}
-			emitMetadata(OpJmp, buffer.Len(), 9)
+			emitMetadata(OpJmp, buffer.Len(), instAndInt64Len)
 			buffer.WriteByte(OpJmp)
 			label := int(instr.Immediates[0].(uint32))
 			block := blocks[curBlockDepth-int(label)]
@@ -336,7 +342,7 @@ func Compile(disassembly []disasm.Instr) ([]byte, *BytecodeMetadata) {
 				block.branchTables = append(block.branchTables, branchTable)
 			}
 
-			emitMetadata(ops.BrTable, buffer.Len(), 9)
+			emitMetadata(ops.BrTable, buffer.Len(), instAndInt64Len)
 			buffer.WriteByte(ops.BrTable)
 			binary.Write(buffer, binary.LittleEndian, int64(len(branchTables)-1))
 		}
