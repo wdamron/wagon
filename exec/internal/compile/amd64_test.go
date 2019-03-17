@@ -29,7 +29,8 @@ func TestAMD64StackPush(t *testing.T) {
 	}
 
 	b := &AMD64Backend{}
-	b.emitPreamble(builder)
+	regs := &dirtyRegs{}
+	b.emitPreamble(builder, regs)
 	mov := builder.NewProg()
 	mov.As = x86.AMOVQ
 	mov.From.Type = obj.TYPE_CONST
@@ -37,7 +38,7 @@ func TestAMD64StackPush(t *testing.T) {
 	mov.To.Type = obj.TYPE_REG
 	mov.To.Reg = x86.REG_AX
 	builder.AddInstruction(mov)
-	b.emitWasmStackPush(builder, x86.REG_AX)
+	b.emitWasmStackPush(builder, regs, x86.REG_AX)
 	mov = builder.NewProg()
 	mov.As = x86.AMOVQ
 	mov.From.Type = obj.TYPE_CONST
@@ -45,16 +46,9 @@ func TestAMD64StackPush(t *testing.T) {
 	mov.To.Type = obj.TYPE_REG
 	mov.To.Reg = x86.REG_AX
 	builder.AddInstruction(mov)
-	b.emitWasmStackPush(builder, x86.REG_AX)
-	ret := builder.NewProg()
-	ret.As = obj.ARET
-	builder.AddInstruction(ret)
+	b.emitWasmStackPush(builder, regs, x86.REG_AX)
+	b.emitPostamble(builder, regs)
 	out := builder.Assemble()
-
-	// cmd := exec.Command("ndisasm", "-b64", "-")
-	// cmd.Stdin = bytes.NewReader(out)
-	// cmd.Stdout = os.Stdout
-	// cmd.Run()
 
 	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
@@ -87,19 +81,13 @@ func TestAMD64StackPop(t *testing.T) {
 	}
 
 	b := &AMD64Backend{}
-	b.emitPreamble(builder)
-	b.emitWasmStackLoad(builder, x86.REG_AX)
-	b.emitWasmStackLoad(builder, x86.REG_BX)
-	b.emitWasmStackPush(builder, x86.REG_AX)
-	ret := builder.NewProg()
-	ret.As = obj.ARET
-	builder.AddInstruction(ret)
+	regs := &dirtyRegs{}
+	b.emitPreamble(builder, regs)
+	b.emitWasmStackLoad(builder, regs, x86.REG_AX)
+	b.emitWasmStackLoad(builder, regs, x86.REG_BX)
+	b.emitWasmStackPush(builder, regs, x86.REG_AX)
+	b.emitPostamble(builder, regs)
 	out := builder.Assemble()
-
-	// cmd := exec.Command("ndisasm", "-b64", "-")
-	// cmd.Stdin = bytes.NewReader(out)
-	// cmd.Stdout = os.Stdout
-	// cmd.Run()
 
 	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
@@ -119,7 +107,7 @@ func TestAMD64StackPop(t *testing.T) {
 	}
 }
 
-func TestAMD64ConstAdd(t *testing.T) {
+func TestAMD64LocalsGet(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.SkipNow()
 	}
@@ -130,34 +118,116 @@ func TestAMD64ConstAdd(t *testing.T) {
 	}
 
 	b := &AMD64Backend{}
-	b.emitPreamble(builder)
-	b.emitPushI64(builder, 3)
-	b.emitBinaryI64(builder, ops.I64Add)
-	ret := builder.NewProg()
-	ret.As = obj.ARET
-	builder.AddInstruction(ret)
+	regs := &dirtyRegs{}
+	b.emitPreamble(builder, regs)
+	b.emitWasmLocalsLoad(builder, regs, x86.REG_AX, 0)
+	b.emitWasmStackPush(builder, regs, x86.REG_AX)
+	b.emitWasmLocalsLoad(builder, regs, x86.REG_AX, 1)
+	b.emitWasmStackPush(builder, regs, x86.REG_AX)
+	b.emitBinaryI64(builder, regs, ops.I64Add)
+	b.emitPostamble(builder, regs)
 	out := builder.Assemble()
-
-	// cmd := exec.Command("ndisasm", "-b64", "-")
-	// cmd.Stdin = bytes.NewReader(out)
-	// cmd.Stdout = os.Stdout
-	// cmd.Run()
 
 	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fakeStack := make([]uint64, 1, 5)
-	fakeStack[0] = 12
-	fakeLocals := make([]uint64, 0, 0)
+	fakeStack := make([]uint64, 0, 5)
+	fakeLocals := make([]uint64, 2, 2)
+	fakeLocals[0] = 1335
+	fakeLocals[1] = 2
 	nativeBlock.Invoke(&fakeStack, &fakeLocals)
 
 	if got, want := len(fakeStack), 1; got != want {
-		t.Fatalf("fakeStack.Len = %d, want %d", got, want)
+		t.Errorf("fakeStack.Len = %d, want %d", got, want)
 	}
-	if got, want := fakeStack[0], uint64(15); got != want {
+	if got, want := fakeStack[0], uint64(1337); got != want {
 		t.Errorf("fakeStack[0] = %d, want %d", got, want)
+	}
+}
+
+func TestAMD64OperationsI64(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.SkipNow()
+	}
+	testCases := []struct {
+		Name   string
+		Op     byte
+		Args   []uint64
+		Result uint64
+	}{
+		{
+			Name:   "add",
+			Op:     ops.I64Add,
+			Args:   []uint64{12, 3},
+			Result: 15,
+		},
+		{
+			Name:   "subtract",
+			Op:     ops.I64Sub,
+			Args:   []uint64{12, 3},
+			Result: 9,
+		},
+		{
+			Name:   "and",
+			Op:     ops.I64And,
+			Args:   []uint64{15, 3},
+			Result: 3,
+		},
+		{
+			Name:   "or",
+			Op:     ops.I64Or,
+			Args:   []uint64{1, 2},
+			Result: 3,
+		},
+		{
+			Name:   "multiply",
+			Op:     ops.I64Mul,
+			Args:   []uint64{11, 5},
+			Result: 55,
+		},
+	}
+
+	allocator := &MMapAllocator{}
+	b := &AMD64Backend{}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			regs := &dirtyRegs{}
+			builder, err := asm.NewBuilder("amd64", 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.emitPreamble(builder, regs)
+
+			for _, arg := range tc.Args {
+				b.emitPushI64(builder, regs, arg)
+			}
+			b.emitBinaryI64(builder, regs, tc.Op)
+			b.emitPostamble(builder, regs)
+			out := builder.Assemble()
+
+			// cmd := exec.Command("ndisasm", "-b64", "-")
+			// cmd.Stdin = bytes.NewReader(out)
+			// cmd.Stdout = os.Stdout
+			// cmd.Run()
+
+			nativeBlock, err := allocator.AllocateExec(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			fakeStack := make([]uint64, 0, 5)
+			fakeLocals := make([]uint64, 0, 0)
+			nativeBlock.Invoke(&fakeStack, &fakeLocals)
+
+			if got, want := len(fakeStack), 1; got != want {
+				t.Fatalf("fakeStack.Len = %d, want %d", got, want)
+			}
+			if got, want := fakeStack[0], tc.Result; got != want {
+				t.Errorf("fakeStack[0] = %d, want %d", got, want)
+			}
+		})
 	}
 }
 

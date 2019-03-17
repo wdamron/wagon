@@ -367,8 +367,8 @@ outer:
 	for int(vm.ctx.pc) < len(vm.ctx.code) && !vm.abort {
 		op := vm.ctx.code[vm.ctx.pc]
 		vm.ctx.pc++
-		//fmt.Printf("stack=%+v\n", vm.ctx.stack)
-		//fmt.Printf("op=%x, pc=%v, *asm=%v\n", op, vm.ctx.pc, *vm.ctx.asm)
+		// fmt.Printf("stack=%+v (%d,%d), locals=%+v\n", vm.ctx.stack, len(vm.ctx.stack), cap(vm.ctx.stack), vm.ctx.locals)
+		// fmt.Printf("op=%x, pc=%v, *asm=%v\n", op, vm.ctx.pc, vm.ctx.asm)
 		switch op {
 		case ops.Return:
 			break outer

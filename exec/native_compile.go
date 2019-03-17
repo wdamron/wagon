@@ -108,7 +108,7 @@ func (vm *VM) tryNativeCompile() error {
 			}
 			fn.asm = append(fn.asm, asmBlock{
 				nativeUnit: unit,
-				resumePC:   upper + 1,
+				resumePC:   upper,
 			})
 
 			// Patch the wasm opcode stream to call into the native section.

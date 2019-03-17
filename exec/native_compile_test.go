@@ -101,7 +101,7 @@ func TestNativeAsmStructureSetup(t *testing.T) {
 	if got, want := len(fn.asm), 1; got != want {
 		t.Fatalf("len(fn.asm) = %d, want %d", got, want)
 	}
-	if got, want := int(fn.asm[0].resumePC), 16; got != want {
+	if got, want := int(fn.asm[0].resumePC), 15; got != want {
 		t.Errorf("fn.asm[0].resumePC = %v, want %v", got, want)
 	}
 
@@ -160,7 +160,7 @@ func TestBasicAMD64(t *testing.T) {
 	if want := 1; len(fn.asm) != want {
 		t.Fatalf("len(fn.asm) = %d, want %d", len(vm.funcs[0].(compiledFunction).asm), want)
 	}
-	if want := originalLen; int(fn.asm[0].resumePC) != want {
+	if want := originalLen - 1; int(fn.asm[0].resumePC) != want {
 		t.Errorf("fn.asm[0].stride = %v, want %v", fn.asm[0].resumePC, want)
 	}
 

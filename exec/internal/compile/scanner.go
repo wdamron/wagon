@@ -91,10 +91,10 @@ func (s *scanner) ScanFunc(bytecode []byte, meta *BytecodeMetadata) ([]Compilati
 
 		// TODO: Add to this table as backends support more opcodes.
 		switch inst.Op {
-		case ops.I64Const:
+		case ops.I64Const, ops.GetLocal:
 			inProgress.Metrics.IntegerOps++
 			inProgress.Metrics.StackWrites++
-		case ops.I64Add, ops.I64Sub:
+		case ops.I64Add, ops.I64Sub, ops.I64Mul, ops.I64And, ops.I64Or:
 			inProgress.Metrics.IntegerOps++
 			inProgress.Metrics.StackReads += 2
 			inProgress.Metrics.StackWrites++
