@@ -13,9 +13,9 @@ import (
 	"unsafe"
 
 	ops "github.com/go-interpreter/wagon/wasm/operators"
-	asm "github.com/twitchyliquid64/golang-asm"
-	"github.com/twitchyliquid64/golang-asm/obj"
-	"github.com/twitchyliquid64/golang-asm/obj/x86"
+
+	// Importing everything into the current scope makes for less noise:
+	. "github.com/wdamron/x64"
 )
 
 func TestAMD64StackPush(t *testing.T) {
@@ -23,32 +23,26 @@ func TestAMD64StackPush(t *testing.T) {
 		t.SkipNow()
 	}
 	allocator := &MMapAllocator{}
-	builder, err := asm.NewBuilder("amd64", 64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := NewAssembler(make([]byte, 1024))
 
 	b := &AMD64Backend{}
 	regs := &dirtyRegs{}
-	b.emitPreamble(builder, regs)
-	mov := builder.NewProg()
-	mov.As = x86.AMOVQ
-	mov.From.Type = obj.TYPE_CONST
-	mov.From.Offset = 1234
-	mov.To.Type = obj.TYPE_REG
-	mov.To.Reg = x86.REG_AX
-	builder.AddInstruction(mov)
-	b.emitWasmStackPush(builder, regs, x86.REG_AX)
-	mov = builder.NewProg()
-	mov.As = x86.AMOVQ
-	mov.From.Type = obj.TYPE_CONST
-	mov.From.Offset = 5678
-	mov.To.Type = obj.TYPE_REG
-	mov.To.Reg = x86.REG_AX
-	builder.AddInstruction(mov)
-	b.emitWasmStackPush(builder, regs, x86.REG_AX)
-	b.emitPostamble(builder, regs)
-	out := builder.Assemble()
+	b.emitPreamble(a, regs)
+
+	a.RI(MOV, RAX, Imm32(1234))
+	b.emitWasmStackPush(a, regs, RAX)
+
+	a.RI(MOV, RAX, Imm32(5678))
+	b.emitWasmStackPush(a, regs, RAX)
+
+	b.emitPostamble(a, regs)
+
+	a.Finalize()
+	if a.Err() != nil {
+		t.Fatal(a.Err())
+	}
+
+	out := a.Code()
 
 	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
@@ -75,19 +69,21 @@ func TestAMD64StackPop(t *testing.T) {
 		t.SkipNow()
 	}
 	allocator := &MMapAllocator{}
-	builder, err := asm.NewBuilder("amd64", 64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := NewAssembler(make([]byte, 1024))
 
 	b := &AMD64Backend{}
 	regs := &dirtyRegs{}
-	b.emitPreamble(builder, regs)
-	b.emitWasmStackLoad(builder, regs, x86.REG_AX)
-	b.emitWasmStackLoad(builder, regs, x86.REG_BX)
-	b.emitWasmStackPush(builder, regs, x86.REG_AX)
-	b.emitPostamble(builder, regs)
-	out := builder.Assemble()
+	b.emitPreamble(a, regs)
+	b.emitWasmStackLoad(a, regs, RAX)
+	b.emitWasmStackLoad(a, regs, RBX)
+	b.emitWasmStackPush(a, regs, RAX)
+	b.emitPostamble(a, regs)
+
+	a.Finalize()
+	if a.Err() != nil {
+		t.Fatal(a.Err())
+	}
+	out := a.Code()
 
 	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
@@ -112,21 +108,23 @@ func TestAMD64LocalsGet(t *testing.T) {
 		t.SkipNow()
 	}
 	allocator := &MMapAllocator{}
-	builder, err := asm.NewBuilder("amd64", 64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := NewAssembler(make([]byte, 1024))
 
 	b := &AMD64Backend{}
 	regs := &dirtyRegs{}
-	b.emitPreamble(builder, regs)
-	b.emitWasmLocalsLoad(builder, regs, x86.REG_AX, 0)
-	b.emitWasmStackPush(builder, regs, x86.REG_AX)
-	b.emitWasmLocalsLoad(builder, regs, x86.REG_AX, 1)
-	b.emitWasmStackPush(builder, regs, x86.REG_AX)
-	b.emitBinaryI64(builder, regs, ops.I64Add)
-	b.emitPostamble(builder, regs)
-	out := builder.Assemble()
+	b.emitPreamble(a, regs)
+	b.emitWasmLocalsLoad(a, regs, RAX, 0)
+	b.emitWasmStackPush(a, regs, RAX)
+	b.emitWasmLocalsLoad(a, regs, RAX, 1)
+	b.emitWasmStackPush(a, regs, RAX)
+	b.emitBinaryI64(a, regs, ops.I64Add)
+	b.emitPostamble(a, regs)
+
+	a.Finalize()
+	if a.Err() != nil {
+		t.Fatal(a.Err())
+	}
+	out := a.Code()
 
 	nativeBlock, err := allocator.AllocateExec(out)
 	if err != nil {
@@ -194,18 +192,21 @@ func TestAMD64OperationsI64(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			regs := &dirtyRegs{}
-			builder, err := asm.NewBuilder("amd64", 64)
-			if err != nil {
-				t.Fatal(err)
-			}
-			b.emitPreamble(builder, regs)
+			a := NewAssembler(make([]byte, 1024))
+
+			b.emitPreamble(a, regs)
 
 			for _, arg := range tc.Args {
-				b.emitPushI64(builder, regs, arg)
+				b.emitPushI64(a, regs, arg)
 			}
-			b.emitBinaryI64(builder, regs, tc.Op)
-			b.emitPostamble(builder, regs)
-			out := builder.Assemble()
+			b.emitBinaryI64(a, regs, tc.Op)
+			b.emitPostamble(a, regs)
+
+			a.Finalize()
+			if a.Err() != nil {
+				t.Fatal(a.Err())
+			}
+			out := a.Code()
 
 			// cmd := exec.Command("ndisasm", "-b64", "-")
 			// cmd.Stdin = bytes.NewReader(out)
